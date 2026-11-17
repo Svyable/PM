@@ -2,7 +2,7 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const setup=$('setup'),run=$('run'),notice=$('notice'),launchButton=$('launch');
-let projectTabId=null,latestJob=null,showingRun=false,working=false;
+let projectTabId=null,latestJob=null,showingRun=false,working=false,manualNew=false;
 async function message(type,extras={}){
   try{const r=await chrome.runtime.sendMessage({type,...extras});if(r?.ok===false)throw Error(r.error||'PM request failed.');return r;}
   catch(e){throw Error(String(e.message||e));}
@@ -99,7 +99,7 @@ async function refresh(){
   if(working)return;
   try{
     const r=await message('PM_GET_JOB');
-    if(r.job&&(!showingRun||['running','scanning','paused'].includes(r.job.status)))showRunMode(true);
+    if(r.job&&!manualNew&&(!showingRun||['running','scanning','paused'].includes(r.job.status)))showRunMode(true);
     if(r.job&&showingRun)renderJob(r.job);
   }catch(e){if(showingRun)inform(String(e.message||e));}
 }
@@ -121,7 +121,7 @@ $('launchForm').addEventListener('submit',async e=>{
   if(!Number.isInteger(config.target)||config.target<1||config.target>1000){inform('Choose 1–1,000 conversations.');return;}
   if(!config.prompt||config.prompt.length>16000){inform('Enter a prompt of 1–16,000 characters.');return;}
   working=true;launchButton.disabled=true;inform('');
-  try{await message('PM_START',{tabId:projectTabId,config});showRunMode(true);await refreshJobNow();}
+  try{await message('PM_START',{tabId:projectTabId,config});manualNew=false;showRunMode(true);await refreshJobNow();}
   catch(err){inform(String(err.message||err));await refreshJobNow().catch(()=>{});}
   finally{working=false;launchButton.disabled=projectTabId===null;}
 });
@@ -129,7 +129,7 @@ $('reconnect').addEventListener('click',()=>void inspect());
 $('pause').addEventListener('click',()=>void change('PM_PAUSE'));
 $('resume').addEventListener('click',()=>void change('PM_RESUME'));
 $('stop').addEventListener('click',()=>void change('PM_STOP'));
-$('newRun').addEventListener('click',()=>{showRunMode(false);inform('');});
+$('newRun').addEventListener('click',()=>{manualNew=true;showRunMode(false);inform('');});
 $('target').addEventListener('input',markPreset);
 document.querySelectorAll('[data-count]').forEach(b=>b.addEventListener('click',()=>{$('target').value=b.dataset.count;markPreset();}));
 $('export').addEventListener('click',()=>{
