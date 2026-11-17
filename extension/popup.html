@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PM — Proceed Methodically</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+<header class="top"><div class="logo" aria-hidden="true"><strong>P<span>M</span></strong><i>•••</i></div><div class="brand"><strong>PM <em>/ Proceed Methodically</em></strong><small>One prompt. Many conversations.</small></div><span class="version">v0.4</span></header>
+<main>
+<section class="connection" id="connection"><span id="connectionDot" class="signal"></span><span id="connectionMessage">Checking ChatGPT Project…</span><button type="button" id="reconnect" title="Reconnect to current project">Reconnect</button></section>
+<div id="notice" role="status" aria-live="polite" hidden></div>
+<section id="setup">
+ <div class="intro"><span class="eyebrow">NEW DISPATCH</span><span class="introIcon">↗</span></div>
+ <h1>Make every <span>conversation</span> count.</h1>
+ <p class="help">Choose how many threads to wake up in this project.</p>
+ <form id="launchForm">
+  <label for="target">Conversations <small>1–1,000</small></label>
+  <div class="countline"><input type="number" id="target" min="1" max="1000" step="1" value="10" required><span>chats</span></div>
+  <div class="presets" role="group" aria-label="Quick conversation counts"><button type="button" data-count="1">1</button><button type="button" data-count="5">5</button><button type="button" data-count="10" class="chosen">10</button><button type="button" data-count="25">25</button><button type="button" data-count="100">100</button></div>
+  <label for="prompt">Your instruction</label>
+  <textarea id="prompt" maxlength="16000" spellcheck="true" required>proceed methodically</textarea>
+  <div class="columns"><div><label for="effort">Effort level</label><select id="effort"><option>High</option><option>Instant</option><option>Medium</option><option>Extra High</option><option>Keep current</option></select></div><div><label for="delay">Spacing</label><select id="delay"><option value="2">2 seconds</option><option value="4" selected>4 seconds</option><option value="6">6 seconds</option><option value="10">10 seconds</option><option value="20">20 seconds</option><option value="30">30 seconds</option><option value="60">60 seconds</option></select></div></div>
+  <label class="check"><input type="checkbox" id="keepTabs" checked><span>Keep launched conversation tabs open</span></label>
+  <button type="submit" class="launch" id="launch">↗ &nbsp; Launch PM</button>
+ </form>
+ <div class="smallnote">Runs one send at a time. Earlier chats may continue generating. Normal ChatGPT usage limits apply.</div>
+</section>
+<section id="run" hidden>
+ <div class="runhead"><span class="eyebrow">LIVE DISPATCH</span><span class="state" id="state">Running</span></div>
+ <div class="runmetric"><strong id="progress">0</strong><span id="progressTotal">/ 0</span><em id="percentage">0%</em></div>
+ <div class="progressTrack"><div id="progressBar"></div></div>
+ <p id="runMessage" class="runMessage">Preparing your conversations…</p>
+ <div class="stats"><div><strong id="sent">0</strong><span>Sent</span></div><div><strong id="failed">0</strong><span>Skipped / failed</span></div><div><strong id="found">0</strong><span>Found</span></div></div>
+ <div class="actions"><button type="button" id="pause">Pause</button><button type="button" id="resume" hidden>Resume</button><button type="button" id="stop" class="danger">Stop</button><button type="button" id="newRun" hidden>New run</button></div>
+ <div class="activityTitle"><strong>Recent activity</strong><button type="button" id="export">Export JSON ↗</button></div>
+ <div id="activity" class="activity" aria-live="polite"></div>
+ <p class="smallnote">Pausing or stopping does not undo already-sent prompts. Inspect unconfirmed sends before retrying.</p>
+</section>
+</main>
+<footer><span>✦ &nbsp; Make every conversation count.</span><a href="https://svyable.github.io/PM/" target="_blank" rel="noopener">GUIDE ↗</a><span>LOCAL · NO SERVER</span></footer>
+<script src="popup.js"></script>
+</body></html>
