@@ -1,14 +1,69 @@
-# PM — Proceed Methodically
+# PM / Proceed Methodically
 
-**One prompt. Many conversations.**
+**One prompt. Many conversations.** PM is a local-first Chrome extension that initiates a user-selected prompt across existing conversations in a ChatGPT Project.
 
-PM is an independent, open-source Chrome extension for dispatching a user-selected prompt across existing conversations in a ChatGPT Project.
+[**Download PM v0.4.0 (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.4.0.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
 
-- **Project website + user guide:** [svyable.github.io/PM](https://svyable.github.io/PM/)
-- **Install:** Download the repository ZIP, extract, and load the `extension/` directory at `chrome://extensions` using **Load unpacked**.
-- **User guide:** [`docs/index.html`](docs/index.html)
-- **Source:** [`extension/`](extension/)
+## Install
 
-PM operates on the visible ChatGPT interface, not an official OpenAI API. It is unaffiliated with OpenAI. Its selectors may require updates when ChatGPT changes. It does not bypass subscription or rate limits. Test with a single conversation before launching a larger batch.
+1. Download the standalone ZIP above and extract it.
+2. Open `chrome://extensions` in Chrome, Brave, or another compatible Chromium browser.
+3. Enable **Developer mode** and click **Load unpacked**.
+4. Select the extracted **`extension/` folder** containing `manifest.json`.
+5. Open a ChatGPT Project overview URL ending in `/project`, pin PM to the toolbar, and try **1 conversation** first.
 
-Open source, local-first, no server or telemetry. See the product website for setup, controls, limitations, and troubleshooting.
+No PM service account, backend, or telemetry.
+
+## Use PM
+
+Open a ChatGPT Project overview, click PM, and choose a count (1–1,000), instruction (default: `proceed methodically`), effort (default: **High**), spacing (default: 4 seconds), and whether to keep launched tabs open. Click **Launch PM**.
+
+PM scrolls the project list, queues matching links, opens each chat in a new tab, checks the requested effort, inserts the prompt, clicks **Send**, and records the result. Dispatch is sequential; previously launched chats may continue generating at the same time. Reopen the popup to monitor, pause/resume, stop or export JSON results.
+
+**Safeguards:** Existing drafts are not overwritten. Unsupported effort selections fail closed. Unconfirmed sends are not retried automatically. Repeated unexpected failures pause the run.
+
+### Behavior and limits
+
+- PM only targets **existing project conversations**, not new chats.
+- Conversations remain independent. PM does not share their answers or coordinate reasoning across chats.
+- Normal ChatGPT subscription, model and rate limits apply. PM does not bypass them.
+- PM uses the visible UI, not a private ChatGPT API. Selectors can break as ChatGPT changes.
+- PM keeps settings, queue and results in Chrome local storage; no PM server or analytics.
+- PM is independent and **not affiliated with OpenAI**.
+
+**Beta status:** Simulated DOM tests cover basic dispatch safety, but successful dispatch on a live, authenticated ChatGPT session has not been independently verified. Test 1 chat, inspect the sent message, then test 5 before attempting larger batches.
+
+## Repository layout
+
+    extension/manifest.json       — Chrome MV3 manifest
+    extension/background.js       — queue, tab launches, recovery and watchdog
+    extension/content.js          — project scan, effort picker, composer and send
+    extension/popup.html          — configuration and run status
+    extension/popup.css
+    extension/popup.js
+    extension/icons/             — PM branding in PNG sizes
+    docs/index.html              — single-file billboard and complete guide
+    docs/downloads/              — direct install ZIP
+    tests/adapter.mock.cjs       — mock scan, drafts and single-send checks
+    .github/workflows/check.yml  — automated validation
+    .github/workflows/pages.yml  — Pages deployment
+
+## Test
+
+Run `node --check extension/background.js`, `node --check extension/content.js`, `node --check extension/popup.js`, `node tests/adapter.mock.cjs`, and `unzip -t docs/downloads/PM-Chrome-Extension-v0.4.0.zip`.
+
+See [GitHub Actions](https://github.com/Svyable/PM/actions) for CI results.
+
+## Activate GitHub Pages (one-time owner action)
+
+The product site has been committed at [`docs/index.html`](docs/index.html). To publish it at **https://svyable.github.io/PM/**:
+
+1. Visit [**Svyable/PM → Settings → Pages**](https://github.com/Svyable/PM/settings/pages).
+2. Under **Build and deployment → Source**, select **GitHub Actions**.
+3. [Rerun **Publish PM website**](https://github.com/Svyable/PM/actions/workflows/pages.yml) or commit another change to `docs/`.
+
+The workflow tried to create the Pages site itself, but GitHub denied that permission (`Resource not accessible by integration`). Once Pages is enabled, the included workflow will publish subsequent updates automatically.
+
+## License
+
+The source is publicly viewable; a redistribution license has not yet been selected. Public repository access alone does not grant open-source redistribution rights.
