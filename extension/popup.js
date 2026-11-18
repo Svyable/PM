@@ -103,6 +103,11 @@ function renderJob(job){
     }
     line.append(status);wrapper.append(line);
     if(row.error){const reason=document.createElement('div');reason.className='reason';reason.textContent=row.error;wrapper.append(reason);}
+    if(Number.isFinite(row.readyWaitMs)){
+      const timing=document.createElement('div');timing.className='reason';
+      timing.textContent='Page ready: '+(row.readyWaitMs/1000).toFixed(1)+'s · Verification: '+((row.confirmationWaitMs||0)/1000).toFixed(1)+'s';
+      wrapper.append(timing);
+    }
     activity.append(wrapper);
   }
 }
