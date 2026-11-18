@@ -1,11 +1,11 @@
-/* PM — Proceed Methodically 0.5 | Chrome MV3 coordinator
+/* PM — Proceed Methodically 0.6 | Chrome MV3 coordinator
  * Single bounded queue; never retries an uncertain send.
  */
 'use strict';
-const VERSION='0.5.0', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
+const VERSION='0.6.0', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
 const PROJECT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/project\/?(?:[?#].*)?$/;
 const CHAT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/c\/([a-zA-Z0-9-]+)\/?$/;
-const DEFAULTS={target:10,prompt:'proceed methodically',effort:'High',delaySeconds:4,keepTabs:true};
+const DEFAULTS={target:10,prompt:'proceed methodically',effort:'High',delaySeconds:4,loadTimeoutSeconds:180,keepTabs:true};
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const error=e=>String(e?.message||e||'Unknown error').slice(0,320);
 async function load(){return(await chrome.storage.local.get(KEY))[KEY]||null;}
@@ -23,10 +23,13 @@ function validate(raw){
   if(!Number.isInteger(target)||target<1||target>1000)throw Error('Choose 1 to 1,000 conversations.');
   if(!prompt||prompt.length>16000)throw Error('The prompt must contain 1 to 16,000 characters.');
   if(!['Instant','Medium','High','Extra High','Keep current'].includes(effort))throw Error('Unsupported effort.');
+  const loadTimeoutSeconds=Number(raw?.loadTimeoutSeconds??180);
+  if(!Number.isFinite(loadTimeoutSeconds)||loadTimeoutSeconds<30||loadTimeoutSeconds>600)throw Error('Page readiness timeout must be 30–600 seconds.');
   if(!Number.isFinite(delaySeconds)||delaySeconds<2||delaySeconds>60)throw Error('Spacing must be between 2 and 60 seconds.');
-  return{target,prompt,effort,delaySeconds,keepTabs:raw.keepTabs!==false};
+  return{target,prompt,effort,delaySeconds,loadTimeoutSeconds,keepTabs:raw.keepTabs!==false};
 }
 const attaching=new Map();
+const recentlyInjected=new Map();
 async function ping(tabId){try{const r=await chrome.tabs.sendMessage(tabId,{type:'PM_PING'});return r?.ok&&r.version===VERSION?r:null;}catch{return null;}}
 async function adapter(tabId){
   const alive=await ping(tabId);if(alive)return alive;
@@ -34,8 +37,11 @@ async function adapter(tabId){
   const promise=(async()=>{
     const tab=await chrome.tabs.get(tabId);
     if(!tab.url?.startsWith('https://chatgpt.com/'))throw Error('Open ChatGPT first.');
+    // Avoid stacking scripts on a slowly navigating tab.
+    if(Date.now()-(recentlyInjected.get(tabId)||0)<2200)throw Error('Waiting for ChatGPT content script.');
+    recentlyInjected.set(tabId,Date.now());
     try{await chrome.scripting.executeScript({target:{tabId},files:['content.js'],injectImmediately:true});}
-    catch(e){throw Error('Could not connect to ChatGPT: '+error(e)+'. Check PM site access.');}
+    catch(e){throw Error('Could not connect to ChatGPT yet: '+error(e));}
     for(let i=0;i<15;i++){const r=await ping(tabId);if(r)return r;await sleep(200);}
     throw Error('Content adapter did not respond after injection. Reload the ChatGPT tab.');
   })();
@@ -91,37 +97,93 @@ async function launch(){
     let tab;
     try{tab=await chrome.tabs.create({url:item.url,active:false});}
     catch(e){await finish(null,{ok:false,error:'Failed opening tab: '+error(e),reasonCode:'tab'},item);return;}
-    job.current={tabId:tab.id,chatId:item.id,title:item.title,phase:'loading',startedAt:Date.now()};
+    job.current={tabId:tab.id,chatId:item.id,title:item.title,phase:'waiting',startedAt:Date.now(),attemptToken:job.id+':'+job.index+':'+tab.id};
     job.nextAt=0;await save(job);
-    // Chrome may finish loading between tabs.create() and save(). Recheck it
-    // after queue ownership is durable, rather than trusting the old snapshot.
-    const fresh=await chrome.tabs.get(tab.id).catch(()=>null);
-    if(fresh?.status==='complete')await dispatch(tab.id);
+    // Start readiness polling immediately, even while the browser reports
+    // "loading". Waiting for "complete" delayed slow ChatGPT pages unnecessarily.
+    void dispatch(tab.id);
   }finally{launchBusy=false;}
 }
+function currentOwned(j,tabId,token,cid){
+  return j?.current?.tabId===tabId && j.current.attemptToken===token && j.current.chatId===cid;
+}
+async function pauseReadiness(tabId,token,cid,details){
+  const j=await load();
+  if(!currentOwned(j,tabId,token,cid)||j.status!=='running'||j.current.phase!=='waiting')return;
+  j.status='paused';
+  j.pauseReason='Chat did not become ready in '+j.config.loadTimeoutSeconds+' seconds: '+details+'. This conversation is still queued and has NOT been sent. Resume to retry this same tab.';
+  j.current.waitError=details;
+  await save(j);
+}
 async function dispatch(tabId){
-  // The navigation event and the tab-creation path can arrive together.
-  // Lock synchronously, before the first await, to avoid two PM_APPLY calls.
+  // One readiness poller for each opened tab; no queue advancement until a
+  // real acknowledgement from this exact conversation or an explicit failure.
   if(dispatchingTabs.has(tabId))return;
   dispatchingTabs.add(tabId);
   try{
-  let job=await load();
-  if(job?.status!=='running'||job.current?.tabId!==tabId||job.current.phase!=='loading')return;
-  job.current.phase='working';job.current.dispatchedAt=Date.now();await save(job);
-  let delivered=false;
-  try{
-    const a=await adapter(tabId);
-    if(a.chat?.projectId!==job.projectId||a.chat?.chatId!==job.current.chatId)throw Error('Chat URL did not match the queue.');
-    delivered=true;
-    const ack=await chrome.tabs.sendMessage(tabId,{
-      type:'PM_APPLY',jobId:job.id,pid:job.projectId,cid:job.current.chatId,
-      prompt:job.config.prompt,effort:job.config.effort
-    });
-    if(ack?.accepted===false){delivered=false;throw Error(ack.reason||'Content adapter declined the chat.');}
-    if(!ack?.accepted)throw Error('Content adapter did not acknowledge dispatch.');
-  }catch(e){
-    await finish(tabId,{ok:false,uncertain:delivered,error:'Dispatch failed: '+error(e),reasonCode:'dispatch'});
-  }
+    let job=await load();
+    if(job?.status!=='running'||job.current?.tabId!==tabId||job.current.phase!=='waiting')return;
+    const token=job.current.attemptToken,cid=job.current.chatId,pid=job.projectId,jobId=job.id;
+    const expected=job.queue[job.index]?.url;
+    if(!expected || job.queue[job.index]?.id!==cid){
+      await pauseReadiness(tabId,token,cid,'Queue identity does not match the selected tab');
+      return;
+    }
+    let lastReason='waiting for ChatGPT to render its composer';
+    while(true){
+      job=await load();
+      if(job?.id!==jobId||job.status!=='running'||!currentOwned(job,tabId,token,cid)||job.current.phase!=='waiting')return;
+      if(Date.now()-job.current.startedAt>(job.config.loadTimeoutSeconds||180)*1000){
+        await pauseReadiness(tabId,token,cid,lastReason);
+        return;
+      }
+      const tab=await chrome.tabs.get(tabId).catch(()=>null);
+      if(!tab){
+        await finish(tabId,{ok:false,reasonCode:'tab',error:'Conversation tab was closed before sending.'});
+        return;
+      }
+      // Chrome emits "complete" for intermediate redirects too. The URL,
+      // content script route, and composer must ALL match the queued chat.
+      const actual=String(tab.url||'').split(/[?#]/)[0].replace(/\/$/,'');
+      if(actual!==expected.replace(/\/$/,'')){
+        lastReason='browser is at '+(actual||'an unfinished navigation')+' rather than the queued conversation';
+      }else{
+        try{
+          const adapterInfo=await adapter(tabId);
+          if(adapterInfo.chat?.projectId!==pid||adapterInfo.chat?.chatId!==cid){
+            lastReason='ChatGPT is still routing to the intended conversation';
+          }else{
+            const r=await chrome.tabs.sendMessage(tabId,{type:'PM_READY',pid,cid});
+            if(r?.ready===true)break;
+            lastReason='the conversation composer is not available yet';
+          }
+        }catch(e){lastReason='the ChatGPT content script is still loading ('+error(e)+')';}
+      }
+      await sleep(650);
+    }
+
+    // Re-read after waiting: a pause, stop, navigation or timeout may have
+    // changed ownership. Never dispatch from a stale tab-load event.
+    job=await load();
+    if(job?.id!==jobId||job.status!=='running'||!currentOwned(job,tabId,token,cid)||job.current.phase!=='waiting')return;
+    job.current.phase='sending';
+    job.current.dispatchedAt=Date.now();
+    await save(job);
+    let delivered=false;
+    try{
+      const live=await load();
+      if(live?.id!==jobId || !currentOwned(live,tabId,token,cid) || !['running','paused'].includes(live.status))return;
+      // It is now safe to send ONLY to the matching content script.
+      delivered=true;
+      const ack=await chrome.tabs.sendMessage(tabId,{
+        type:'PM_APPLY',jobId,pid,cid,attemptToken:token,
+        prompt:job.config.prompt,effort:job.config.effort
+      });
+      if(ack?.accepted===false){delivered=false;throw Error(ack.reason||'Chat was not ready for the prompt.');}
+      if(!ack?.accepted)throw Error('Could not confirm that the chat adapter accepted this dispatch.');
+    }catch(e){
+      await finish(tabId,{ok:false,uncertain:delivered,reasonCode:'dispatch',error:'Dispatch failed: '+error(e)});
+    }
   }finally{dispatchingTabs.delete(tabId);}
 }
 async function finish(tabId,result,explicit=null){
@@ -137,6 +199,10 @@ async function finish(tabId,result,explicit=null){
     if(tabId!==null&&j.current?.tabId!==tabId)return;
     if(tabId===null&&j.current)return;
     const item=explicit||j.queue[j.index];if(!item)return;
+    if(tabId!==null&&j.current?.chatId!==item.id){
+      j.status='paused';j.pauseReason='Queue identity changed while processing a tab. No further chats will launch.';
+      await save(j);return;
+    }
     const row={id:item.id,title:item.title,url:item.url,ok:result.ok===true,
       uncertain:result.uncertain===true&&!result.ok,reasonCode:result.reasonCode||'other',
       error:result.ok?null:error(result.error),at:Date.now()};
@@ -170,15 +236,18 @@ async function control(type){
   if(type==='PM_RESUME'){
     if(j.status!=='paused')throw Error('The run is not paused.');
     j.status=j.index>=j.queue.length&&!j.current?'done':'running';
-    j.pauseReason=null;j.consecutiveFailures=0;await save(j);await watchdog();
-    if(runnable(j))await launch();return{ok:true};
+    j.pauseReason=null;j.consecutiveFailures=0;
+    if(j.current?.phase==='waiting')j.current.startedAt=Date.now();
+    await save(j);await watchdog();
+    if(j.current?.phase==='waiting')void dispatch(j.current.tabId);
+    else if(runnable(j))await launch();return{ok:true};
   }
   if(type==='PM_STOP'){
     if(!['running','scanning','paused'].includes(j.status))return{ok:true};
     const scanning=j.status==='scanning';j.status='stopped';j.pauseReason=null;await save(j);
     try{
       if(scanning)await chrome.tabs.sendMessage(j.projectTabId,{type:'PM_SCAN_ABORT'});
-      else if(j.current?.tabId)await chrome.tabs.sendMessage(j.current.tabId,{type:'PM_APPLY_ABORT'});
+      else if(j.current?.tabId && j.current.phase==='sending')await chrome.tabs.sendMessage(j.current.tabId,{type:'PM_APPLY_ABORT'});
     }catch{}
     await clearWatchdog();return{ok:true};
   }
@@ -215,15 +284,15 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
   })());
   if(m.type==='PM_RESULT')return reply((async()=>{
     const j=await load();
-    if(j?.id!==m.jobId||j.current?.tabId!==s.tab?.id||j.current.chatId!==m.chatId)return{ok:false};
+    if(j?.id!==m.jobId||j.current?.tabId!==s.tab?.id||j.current.chatId!==m.chatId||j.current.attemptToken!==m.attemptToken||j.current.phase!=='sending')return{ok:false};
     await finish(s.tab.id,{ok:m.ok===true,uncertain:m.uncertain===true,reasonCode:m.reasonCode,error:m.error});
     return{ok:true};
   })());
 });
-chrome.tabs.onUpdated.addListener((id,change)=>{if(change.status==='complete')void dispatch(id);});
+chrome.tabs.onUpdated.addListener((id,change)=>{if(change.status==='complete'||typeof change.url==='string')void dispatch(id);});
 chrome.tabs.onRemoved.addListener(id=>{void(async()=>{
   const j=await load();
-  if(j?.current?.tabId===id)await finish(id,{ok:false,uncertain:j.current.phase==='working',reasonCode:'closed',error:'Tab closed before confirmation.'});
+  if(j?.current?.tabId===id)await finish(id,{ok:false,uncertain:j.current.phase==='sending',reasonCode:'closed',error:'Tab closed before confirmation.'});
   else if(j?.status==='scanning'&&j.projectTabId===id){
     j.status='error';j.error='Project tab closed during scan.';await save(j);await clearWatchdog();
   }
@@ -234,11 +303,12 @@ chrome.alarms.onAlarm.addListener(a=>{if(a.name!==ALARM)return;void(async()=>{
     j.status='error';j.error='Project scan timed out.';await save(j);await clearWatchdog();return;
   }
   if(j.status==='running'&&j.current){
-    if(Date.now()-j.current.startedAt>120000){
-      await finish(j.current.tabId,{ok:false,uncertain:j.current.phase==='working',reasonCode:'timeout',error:'Timed out waiting for chat confirmation.'});
-    }else if(j.current.phase==='loading'){
-      const tab=await chrome.tabs.get(j.current.tabId).catch(()=>null);
-      if(tab?.status==='complete')await dispatch(tab.id);
+    if(j.current.phase==='waiting'){
+      if(Date.now()-j.current.startedAt>(j.config.loadTimeoutSeconds||180)*1000)
+        await pauseReadiness(j.current.tabId,j.current.attemptToken,j.current.chatId,'readiness deadline exceeded');
+      else void dispatch(j.current.tabId);
+    }else if(j.current.phase==='sending'&&Date.now()-j.current.dispatchedAt>90000){
+      await finish(j.current.tabId,{ok:false,uncertain:true,reasonCode:'unconfirmed',error:'Timed out waiting for an acknowledged chat send. Inspect before retrying.'});
     }
   }else if(j.status==='running')await launch();
 })();});
