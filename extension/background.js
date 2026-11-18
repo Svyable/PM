@@ -122,7 +122,7 @@ async function dispatch(tabId){
   dispatchingTabs.add(tabId);
   try{
     let job=await load();
-    if(job?.status!=='running'||job.current?.tabId!==tabId||job.current.phase!=='waiting')return;
+    if(job?.status!=='running'||job.version!==VERSION||job.current?.tabId!==tabId||job.current.phase!=='waiting')return;
     const token=job.current.attemptToken,cid=job.current.chatId,pid=job.projectId,jobId=job.id;
     const expected=job.queue[job.index]?.url;
     if(!expected || job.queue[job.index]?.id!==cid){
@@ -255,12 +255,17 @@ async function control(type){
   }
   if(type==='PM_RESUME'){
     if(j.status!=='paused')throw Error('The run is not paused.');
+    if(j.version!==VERSION)throw Error('This run began in an older PM version. Stop it and start a new run.');
     j.status=j.index>=j.queue.length&&!j.current?'done':'running';
     j.pauseReason=null;j.consecutiveFailures=0;
     if(j.current?.phase==='waiting')j.current.startedAt=Date.now();
     await save(j);await watchdog();
-    if(j.current?.phase==='waiting')void dispatch(j.current.tabId);
-    else if(runnable(j))await launch();return{ok:true};
+    if(j.current?.phase==='waiting'){
+      const tabId=j.current.tabId;
+      void dispatch(tabId);
+      // The previous readiness poller may still be releasing its lock.
+      setTimeout(()=>void dispatch(tabId),300);
+    }else if(runnable(j))await launch();return{ok:true};
   }
   if(type==='PM_STOP'){
     if(!['running','scanning','paused'].includes(j.status))return{ok:true};
@@ -332,5 +337,13 @@ chrome.alarms.onAlarm.addListener(a=>{if(a.name!==ALARM)return;void(async()=>{
     }
   }else if(j.status==='running')await launch();
 })();});
-chrome.runtime.onStartup.addListener(()=>void watchdog());
-chrome.runtime.onInstalled.addListener(()=>void watchdog());
+async function quarantineOldJob(){
+  const j=await load();
+  if(j&&j.version!==VERSION&&['running','scanning','paused'].includes(j.status)){
+    j.status='paused';
+    j.pauseReason='A PM update occurred during this run. Stop this older run and start a new one to avoid dispatching with stale queue state.';
+    await save(j);
+  }
+}
+chrome.runtime.onStartup.addListener(()=>{void watchdog();void quarantineOldJob();});
+chrome.runtime.onInstalled.addListener(()=>{void watchdog();void quarantineOldJob();});
