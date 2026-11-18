@@ -3,7 +3,7 @@
   "name": "PM — Proceed Methodically",
   "short_name": "PM",
   "description": "One prompt. Many conversations. Methodically dispatch across existing chats inside a ChatGPT Project.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "minimum_chrome_version": "120",
   "permissions": [
     "tabs",
