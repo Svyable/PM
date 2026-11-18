@@ -182,7 +182,20 @@ async function dispatch(tabId){
       if(ack?.accepted===false){delivered=false;throw Error(ack.reason||'Chat was not ready for the prompt.');}
       if(!ack?.accepted)throw Error('Could not confirm that the chat adapter accepted this dispatch.');
     }catch(e){
-      await finish(tabId,{ok:false,uncertain:delivered,reasonCode:'dispatch',error:'Dispatch failed: '+error(e)});
+      if(!delivered){
+        // The content script explicitly declined: no send was accepted.
+        // Retain this queue item for an intentional retry after inspection.
+        const j=await load();
+        if(j?.id===jobId&&currentOwned(j,tabId,token,cid)&&j.status==='running'){
+          j.status='paused';
+          j.current.phase='waiting';
+          j.current.waitError=error(e);
+          j.pauseReason='The chat was not ready to accept the instruction: '+error(e)+'. Nothing was submitted; Resume retries this same conversation.';
+          await save(j);
+        }
+      }else{
+        await finish(tabId,{ok:false,uncertain:true,reasonCode:'dispatch',error:'Dispatch may have been sent: '+error(e)});
+      }
     }
   }finally{dispatchingTabs.delete(tabId);}
 }
@@ -201,6 +214,13 @@ async function finish(tabId,result,explicit=null){
     const item=explicit||j.queue[j.index];if(!item)return;
     if(tabId!==null&&j.current?.chatId!==item.id){
       j.status='paused';j.pauseReason='Queue identity changed while processing a tab. No further chats will launch.';
+      await save(j);return;
+    }
+    if(result.reasonCode==='wrong-chat'&&!result.uncertain){
+      // The content script rejected a late route change before Send.
+      // Never advance the cursor or accidentally send to the next chat.
+      j.status='paused';j.current.phase='waiting';j.current.waitError=error(result.error);
+      j.pauseReason='ChatGPT navigated to a different conversation before Send. Nothing was submitted. Resume to retry this queued thread.';
       await save(j);return;
     }
     const row={id:item.id,title:item.title,url:item.url,ok:result.ok===true,
