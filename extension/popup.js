@@ -90,7 +90,15 @@ function renderJob(job){
     const title=document.createElement('span');title.className='title';title.textContent=row.title||'Conversation';
     const status=document.createElement('span');status.className='status'+(row.uncertain?' uncertain':row.ok?'':' failed');
     status.textContent=row.ok?'SENT':row.uncertain?'UNCONFIRMED':'SKIPPED / FAILED';
-    line.append(title,status);wrapper.append(line);
+    line.append(title);
+    if(/^https:\/\/chatgpt\.com\/g\/g-p-[a-zA-Z0-9-]+\/c\/[a-zA-Z0-9-]+\/?$/.test(row.url||'')){
+      const open=document.createElement('a');
+      open.className='openchat';open.href=row.url;
+      open.target='_blank';open.rel='noopener noreferrer';open.textContent='Open ↗';
+      open.title='Inspect this conversation in ChatGPT';
+      line.append(open);
+    }
+    line.append(status);wrapper.append(line);
     if(row.error){const reason=document.createElement('div');reason.className='reason';reason.textContent=row.error;wrapper.append(reason);}
     activity.append(wrapper);
   }

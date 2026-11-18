@@ -1,9 +1,9 @@
-/* PM — Proceed Methodically 0.4 | ChatGPT UI adapter
+/* PM — Proceed Methodically 0.4 | ChatGPT UI adapter v0.5
  * Operates only on visible browser UI. No private endpoints or remote telemetry.
  */
 (() => {
   'use strict';
-  const VERSION='0.4.0';
+  const VERSION='0.5.0';
   const old=globalThis.__PM_LISTENER__;
   try { if(old && chrome.runtime.onMessage.hasListener?.(old)) return; } catch {}
   for(const key of ['__PM_CONTENT_LISTENER_V3__','__PM_CONTENT_LISTENER_V2__']){
@@ -120,6 +120,17 @@
   function userMessages(){
     return [...document.querySelectorAll('[data-message-author-role="user"],[data-testid="user-message"]')].filter(shown);
   }
+  function userMessageMatches(node,prompt){
+    // Confirmation must come from a NEW user turn containing this exact prompt.
+    // The editor clearing, a loading spinner, or any unrelated new turn is not proof.
+    const text=norm(prompt);
+    const candidates=[
+      node.querySelector?.('[data-message-content]'),
+      node.querySelector?.('.whitespace-pre-wrap'),
+      node
+    ].filter(Boolean);
+    return candidates.some(el=>norm(el.innerText||el.textContent)===text);
+  }
   function fail(reasonCode,error,uncertain=false){return{ok:false,reasonCode,error,uncertain};}
   async function apply({jobId,pid,cid,prompt,effort}){
     stopApply=false;const current=chatId();
@@ -145,15 +156,17 @@
       for(let i=0;i<18;i++){send=sendButton();if(send&&!send.disabled&&send.getAttribute('aria-disabled')!=='true')break;await sleep(180);}
       if(!send||send.disabled||send.getAttribute('aria-disabled')==='true')throw Object.assign(Error('Send button not ready. Prompt left in the composer.'),{reasonCode:'send'});
       if(stopApply)throw Error('Aborted before send.');
-      const before=userMessages().length;
+      const before=new Set(userMessages());
       clicked=true;send.click(); // exactly one click; never automatically repeat it
       let confirmed=false;
-      for(let i=0;i<45;i++){
+      for(let i=0;i<60;i++){
         await sleep(320);
-        if(userMessages().length>before){confirmed=true;break;}
-        if(!draftPresent(box)&&i>=5){confirmed=true;break;}
+        // A matching new user message is required; editor clearing is insufficient.
+        const fresh=userMessages().filter(el=>!before.has(el));
+        if(fresh.some(el=>userMessageMatches(el,prompt))){confirmed=true;break;}
+        if(stopApply)break; // even on stop, a clicked send can have been accepted
       }
-      if(!confirmed)throw Object.assign(Error('Send clicked, but acceptance could not be confirmed; inspect the chat before retrying.'),{reasonCode:'unconfirmed'});
+      if(!confirmed)throw Object.assign(Error('Send clicked but no new matching user message appeared. Check the chat before retrying; it may have sent.'),{reasonCode:'unconfirmed'});
       await report('PM_RESULT',{jobId,chatId:cid,ok:true,reasonCode:'sent'});
     }catch(e){
       await report('PM_RESULT',{jobId,chatId:cid,...fail(e.reasonCode||'error',String(e.message||e),clicked)});

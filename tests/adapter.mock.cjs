@@ -18,11 +18,14 @@ function environment(mode){
     isConnected:true,getClientRects:()=>[{}],textContent:'High',
     getAttribute(k){return k==='data-selected-reasoning-effort'?'high':null;},click(){}
   };
-  let messageCount=0;
+  const messageNodes=mode==='existingmatch'?[{isConnected:true,getClientRects:()=>[{}],innerText:'proceed methodically',querySelector(){return null;}}]:[];
   const send={
     isConnected:true,getClientRects:()=>[{}],disabled:false,
     getAttribute(k){return k==='aria-label'?'Send prompt':k==='data-testid'?'send-button':null;},
-    click(){clicks++;box.innerText='';box.textContent='';messageCount++;}
+    click(){
+      clicks++;box.innerText='';box.textContent='';
+      if(mode==='chat'||mode==='wrongturn')messageNodes.push({isConnected:true,getClientRects:()=>[{}],innerText:mode==='chat'?'proceed methodically':'a different message',querySelector(){return null;}});
+    }
   };
   const anchors=['First draft','Second thread'].map((name,i)=>({
     textContent:name,parentElement:null,
@@ -38,7 +41,7 @@ function environment(mode){
       if(selector.startsWith('.ProseMirror'))return[box];
       if(selector==='button')return[effort,send];
       if(selector==='button[data-testid="send-button"]')return[send];
-      if(selector.includes('data-message-author-role="user"'))return Array.from({length:messageCount},()=>({isConnected:true,getClientRects:()=>[{}]}));
+      if(selector.includes('data-message-author-role="user"'))return messageNodes;
       if(selector==='button[data-selected-reasoning-effort]')return[effort];
       return [];
     },
@@ -55,7 +58,7 @@ function environment(mode){
       async sendMessage(msg){messages.push(msg);return{ok:true};}
     }
   };
-  const context={chrome,document:doc,location:{pathname:mode==='project'?'/g/'+project+'/project':'/g/'+project+'/c/chat-1',href:'https://chatgpt.com/'},URL,getComputedStyle(){return{overflowY:'auto',visibility:'visible'};},setTimeout,clearTimeout,InputEvent:class InputEvent{constructor(){}},KeyboardEvent:class KeyboardEvent{constructor(){}},console,globalThis:{}};
+  const context={chrome,document:doc,location:{pathname:mode==='project'?'/g/'+project+'/project':'/g/'+project+'/c/chat-1',href:'https://chatgpt.com/'},URL,getComputedStyle(){return{overflowY:'auto',visibility:'visible'};},setTimeout:(fn,ms)=>setTimeout(fn,Math.min(ms,5)),clearTimeout,InputEvent:class InputEvent{constructor(){}},KeyboardEvent:class KeyboardEvent{constructor(){}},console,globalThis:{}};
   vm.runInNewContext(code,context,{filename:'content.js'});
   function receive(m){let response;handler(m,{},v=>response=v);return response;}
   return{receive,messages,get clicks(){return clicks;}};
@@ -67,7 +70,7 @@ async function until(check,label,ms=2500){
 }
 (async()=>{
   const scan=environment('project');
-  assert.equal(scan.receive({type:'PM_PING'}).version,'0.4.0');
+  assert.equal(scan.receive({type:'PM_PING'}).version,'0.5.0');
   assert.equal(scan.receive({type:'PM_SCAN',jobId:'scan1',pid:project,target:2}).accepted,true);
   await until(()=>scan.messages.some(m=>m.type==='PM_SCANNED'),'scan result');
   const found=scan.messages.find(m=>m.type==='PM_SCANNED');
@@ -85,5 +88,16 @@ async function until(check,label,ms=2500){
   await until(()=>send.messages.some(m=>m.type==='PM_RESULT'),'send result');
   assert.equal(send.messages.find(m=>m.type==='PM_RESULT').ok,true);
   assert.equal(send.clicks,1);
-  console.log('PM adapter smoke tests passed: project scan, draft preservation, and exactly one Send click.');
+
+  for(const mode of ['cleared','wrongturn','existingmatch']){
+    const unsafe=environment(mode);
+    unsafe.receive({type:'PM_APPLY',jobId:'negative-'+mode,pid:project,cid:'chat-1',prompt:'proceed methodically',effort:'High'});
+    await until(()=>unsafe.messages.some(m=>m.type==='PM_RESULT'),mode+' unconfirmed result');
+    const result=unsafe.messages.find(m=>m.type==='PM_RESULT');
+    assert.equal(result.ok,false,mode+' should not be a confirmed send');
+    assert.equal(result.uncertain,true,mode+' should warn about possible prior submission');
+    assert.equal(result.reasonCode,'unconfirmed');
+    assert.equal(unsafe.clicks,1,mode+' must not retry');
+  }
+  console.log('PM adapter regression tests passed: scanning, drafts, matching new message, no false confirmations and one click per attempt.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

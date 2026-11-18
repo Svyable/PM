@@ -21,16 +21,19 @@ jobs:
           node --check extension/content.js
           node --check extension/popup.js
           node --check tests/adapter.mock.cjs
+          node --check tests/coordinator.mock.cjs
       - name: Validate manifest and paths
         run: |
           node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('extension/manifest.json'));for(const p of ['background.js','content.js','popup.html','popup.css','popup.js',...Object.values(m.icons)]){if(!fs.existsSync('extension/'+p))throw Error('Missing: '+p)};if(m.host_permissions.join()!=='https://chatgpt.com/*')throw Error('Unexpected host permissions')"
       - name: Mock ChatGPT DOM adapter
         run: node tests/adapter.mock.cjs
+      - name: Simulated Chrome service worker coordination
+        run: node tests/coordinator.mock.cjs
       - name: Verify standalone extension ZIP
         run: |
-          unzip -t docs/downloads/PM-Chrome-Extension-v0.4.0.zip
+          unzip -t docs/downloads/PM-Chrome-Extension-v0.5.0.zip
           mkdir -p "$RUNNER_TEMP/pm-check"
-          unzip -q docs/downloads/PM-Chrome-Extension-v0.4.0.zip -d "$RUNNER_TEMP/pm-check"
+          unzip -q docs/downloads/PM-Chrome-Extension-v0.5.0.zip -d "$RUNNER_TEMP/pm-check"
           for file in manifest.json background.js content.js popup.html popup.css popup.js; do
             cmp "extension/$file" "$RUNNER_TEMP/pm-check/extension/$file"
           done

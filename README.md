@@ -2,7 +2,7 @@
 
 **One prompt. Many conversations.** PM is a local-first Chrome extension that initiates a user-selected prompt across existing conversations in a ChatGPT Project.
 
-[**Download PM v0.4.0 (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.4.0.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
+[**Download PM v0.5.0 (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.5.0.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
 
 ## Install
 
@@ -18,7 +18,7 @@ No PM service account, backend, or telemetry.
 
 Open a ChatGPT Project overview, click PM, and choose a count (1–1,000), instruction (default: `proceed methodically`), effort (default: **High**), spacing (default: 4 seconds), and whether to keep launched tabs open. Click **Launch PM**.
 
-PM scrolls the project list, queues matching links, opens each chat in a new tab, checks the requested effort, inserts the prompt, clicks **Send**, and records the result. Dispatch is sequential; previously launched chats may continue generating at the same time. Reopen the popup to monitor, pause/resume, stop or export JSON results.
+PM scrolls the project list, queues matching links, opens each chat in a new tab, checks the requested effort, inserts the prompt, clicks **Send**, and records the result. **Sent** now requires a newly rendered user message matching your instruction; clearing the composer does not count as proof. Dispatch is sequential; previously launched chats may continue generating at the same time. Reopen the popup to monitor, pause/resume, stop, open an affected conversation directly from its result, or export JSON logs.
 
 **Safeguards:** Existing drafts are not overwritten. Unsupported effort selections fail closed. Unconfirmed sends are not retried automatically. Repeated unexpected failures pause the run.
 
@@ -31,7 +31,7 @@ PM scrolls the project list, queues matching links, opens each chat in a new tab
 - PM keeps settings, queue and results in Chrome local storage; no PM server or analytics.
 - PM is independent and **not affiliated with OpenAI**.
 
-**Beta status:** Simulated DOM tests cover basic dispatch safety, but successful dispatch on a live, authenticated ChatGPT session has not been independently verified. Test 1 chat, inspect the sent message, then test 5 before attempting larger batches.
+**Beta status:** Mock DOM and Chrome service-worker integration tests cover basic dispatch safety, duplicate tab-event recovery, and uncertain-send circuit breaking, but successful dispatch on a live, authenticated ChatGPT session has not been independently verified. Test 1 chat, inspect the sent message, then test 5 before attempting larger batches.
 
 ## Repository layout
 
@@ -50,7 +50,7 @@ PM scrolls the project list, queues matching links, opens each chat in a new tab
 
 ## Test
 
-Run `node --check extension/background.js`, `node --check extension/content.js`, `node --check extension/popup.js`, `node tests/adapter.mock.cjs`, and `unzip -t docs/downloads/PM-Chrome-Extension-v0.4.0.zip`.
+Run `node --check extension/background.js`, `node --check extension/content.js`, `node --check extension/popup.js`, `node tests/adapter.mock.cjs`, and `unzip -t docs/downloads/PM-Chrome-Extension-v0.5.0.zip`.
 
 See [GitHub Actions](https://github.com/Svyable/PM/actions) for CI results.
 
