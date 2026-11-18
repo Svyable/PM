@@ -70,7 +70,7 @@ async function until(check,label,ms=2500){
 }
 (async()=>{
   const scan=environment('project');
-  assert.equal(scan.receive({type:'PM_PING'}).version,'0.5.0');
+  assert.equal(scan.receive({type:'PM_PING'}).version,'0.6.0');
   assert.equal(scan.receive({type:'PM_SCAN',jobId:'scan1',pid:project,target:2}).accepted,true);
   await until(()=>scan.messages.some(m=>m.type==='PM_SCANNED'),'scan result');
   const found=scan.messages.find(m=>m.type==='PM_SCANNED');
@@ -84,9 +84,12 @@ async function until(check,label,ms=2500){
   assert.equal(draft.clicks,0);
 
   const send=environment('chat');
-  assert.equal(send.receive({type:'PM_APPLY',jobId:'job3',pid:project,cid:'chat-1',prompt:'proceed methodically',effort:'High'}).accepted,true);
+  assert.equal(send.receive({type:'PM_READY',pid:project,cid:'chat-1'}).ready,true);
+  assert.equal(send.receive({type:'PM_READY',pid:project,cid:'chat-2'}).ready,false);
+  assert.equal(send.receive({type:'PM_APPLY',jobId:'job3',pid:project,cid:'chat-1',attemptToken:'attempt-3',prompt:'proceed methodically',effort:'High'}).accepted,true);
   await until(()=>send.messages.some(m=>m.type==='PM_RESULT'),'send result');
   assert.equal(send.messages.find(m=>m.type==='PM_RESULT').ok,true);
+  assert.equal(send.messages.find(m=>m.type==='PM_RESULT').attemptToken,'attempt-3');
   assert.equal(send.clicks,1);
 
   for(const mode of ['cleared','wrongturn','existingmatch']){

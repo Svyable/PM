@@ -31,9 +31,9 @@ jobs:
         run: node tests/coordinator.mock.cjs
       - name: Verify standalone extension ZIP
         run: |
-          unzip -t docs/downloads/PM-Chrome-Extension-v0.5.0.zip
+          unzip -t docs/downloads/PM-Chrome-Extension-v0.6.0.zip
           mkdir -p "$RUNNER_TEMP/pm-check"
-          unzip -q docs/downloads/PM-Chrome-Extension-v0.5.0.zip -d "$RUNNER_TEMP/pm-check"
+          unzip -q docs/downloads/PM-Chrome-Extension-v0.6.0.zip -d "$RUNNER_TEMP/pm-check"
           for file in manifest.json background.js content.js popup.html popup.css popup.js; do
             cmp "extension/$file" "$RUNNER_TEMP/pm-check/extension/$file"
           done

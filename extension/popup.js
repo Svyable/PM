@@ -1,4 +1,4 @@
-/* PM 0.4 — popup controls and status. No external dependencies. */
+/* PM 0.6 — popup controls and status. No external dependencies. */
 'use strict';
 const $=id=>document.getElementById(id);
 const setup=$('setup'),run=$('run'),notice=$('notice'),launchButton=$('launch');
@@ -42,7 +42,7 @@ async function preferences(){
     const r=await message('PM_GET_PREFS');
     const p=r.prefs||{};
     setField('target',p.target||10);setField('prompt',p.prompt||'proceed methodically');
-    setField('effort',p.effort||'High');setField('delay',p.delaySeconds||4);
+    setField('effort',p.effort||'High');setField('delay',p.delaySeconds||4);setField('loadTimeout',p.loadTimeoutSeconds||180);
     $('keepTabs').checked=p.keepTabs!==false;markPreset();
   }catch(e){inform(String(e.message||e));}
 }
@@ -71,8 +71,11 @@ function renderJob(job){
   $('failed').textContent=job.failed||0;
   $('found').textContent=job.found||0;
   const current=job.current?.title?' · '+job.current.title:'';
+  const pageWaiting=job.status==='running'&&job.current?.phase==='waiting';
+  const elapsed=pageWaiting?Math.max(0,Math.floor((Date.now()-job.current.startedAt)/1000)):0;
   const msg=job.error||job.pauseReason||
     (job.status==='scanning'?'Discovered '+(job.found||0)+' conversations so far…':
+    pageWaiting?'Waiting for '+(job.current.title||'conversation')+' to load ('+elapsed+'s / '+(job.config.loadTimeoutSeconds||180)+'s). No prompt has been sent yet.':
     job.status==='running'?'Working on chat '+Math.min((job.index||0)+1,job.total)+' of '+job.total+current:
     job.status==='done'?'Finished. Review the results before launching another run.':
     job.status==='stopped'?'Remaining conversations were not launched.':'Review recent activity.');
@@ -100,6 +103,11 @@ function renderJob(job){
     }
     line.append(status);wrapper.append(line);
     if(row.error){const reason=document.createElement('div');reason.className='reason';reason.textContent=row.error;wrapper.append(reason);}
+    if(Number.isFinite(row.readyWaitMs)){
+      const timing=document.createElement('div');timing.className='reason';
+      timing.textContent='Page ready: '+(row.readyWaitMs/1000).toFixed(1)+'s · Verification: '+((row.confirmationWaitMs||0)/1000).toFixed(1)+'s';
+      wrapper.append(timing);
+    }
     activity.append(wrapper);
   }
 }
@@ -124,7 +132,7 @@ $('launchForm').addEventListener('submit',async e=>{
   e.preventDefault();if(!projectTabId||working)return;
   const config={
     target:Number($('target').value),prompt:$('prompt').value.trim(),effort:$('effort').value,
-    delaySeconds:Number($('delay').value),keepTabs:$('keepTabs').checked
+    delaySeconds:Number($('delay').value),loadTimeoutSeconds:Number($('loadTimeout').value),keepTabs:$('keepTabs').checked
   };
   if(!Number.isInteger(config.target)||config.target<1||config.target>1000){inform('Choose 1–1,000 conversations.');return;}
   if(!config.prompt||config.prompt.length>16000){inform('Enter a prompt of 1–16,000 characters.');return;}
