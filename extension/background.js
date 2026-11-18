@@ -225,7 +225,9 @@ async function finish(tabId,result,explicit=null){
     }
     const row={id:item.id,title:item.title,url:item.url,ok:result.ok===true,
       uncertain:result.uncertain===true&&!result.ok,reasonCode:result.reasonCode||'other',
-      error:result.ok?null:error(result.error),at:Date.now()};
+      error:result.ok?null:error(result.error),at:Date.now(),
+      readyWaitMs:j.current?.dispatchedAt?Math.max(0,j.current.dispatchedAt-j.current.startedAt):null,
+      confirmationWaitMs:j.current?.dispatchedAt?Math.max(0,Date.now()-j.current.dispatchedAt):null};
     j.results.push(row);
     if(j.results.length>1000)j.results.shift();
     if(row.ok){j.completed++;j.consecutiveFailures=0;}
