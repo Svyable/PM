@@ -1,11 +1,16 @@
-/* PM — Proceed Methodically 0.4 | ChatGPT UI adapter v0.5
+/* PM — Proceed Methodically 0.6 | ChatGPT UI adapter
  * Operates only on visible browser UI. No private endpoints or remote telemetry.
  */
 (() => {
   'use strict';
-  const VERSION='0.5.0';
+  const VERSION='0.6.0';
   const old=globalThis.__PM_LISTENER__;
-  try { if(old && chrome.runtime.onMessage.hasListener?.(old)) return; } catch {}
+  try {
+    if(old&&chrome.runtime.onMessage.hasListener?.(old)){
+      if(globalThis.__PM_CONTENT_VERSION__===VERSION)return;
+      chrome.runtime.onMessage.removeListener(old);
+    }
+  } catch {}
   for(const key of ['__PM_CONTENT_LISTENER_V3__','__PM_CONTENT_LISTENER_V2__']){
     try { const fn=globalThis[key]; if(fn && chrome.runtime.onMessage.hasListener?.(fn)) chrome.runtime.onMessage.removeListener(fn); } catch {}
   }
@@ -132,14 +137,14 @@
     return candidates.some(el=>norm(el.innerText||el.textContent)===text);
   }
   function fail(reasonCode,error,uncertain=false){return{ok:false,reasonCode,error,uncertain};}
-  async function apply({jobId,pid,cid,prompt,effort}){
+  async function apply({jobId,pid,cid,prompt,effort,attemptToken}){
     stopApply=false;const current=chatId();
-    if(!current||current.projectId!==pid||current.chatId!==cid){await report('PM_RESULT',{jobId,chatId:cid,...fail('wrong-chat','Chat page did not match the queued conversation.')});return;}
+    if(!current||current.projectId!==pid||current.chatId!==cid){await report('PM_RESULT',{jobId,chatId:cid,attemptToken,...fail('wrong-chat','Chat page did not match the queued conversation.')});return;}
     if(activeApply!==null){await report('PM_RESULT',{jobId,chatId:cid,...fail('busy','PM is already handling this tab.')});return;}
     activeApply=jobId;let clicked=false;
     try{
       let box=null;
-      for(let i=0;i<35;i++){if(stopApply)throw Error('Aborted');box=composer();if(box)break;await sleep(300);}
+      for(let i=0;i<90;i++){if(stopApply)throw Error('Aborted');box=composer();if(box)break;await sleep(300);}
       if(!box)throw Object.assign(Error('Chat composer not found.'),{reasonCode:'composer'});
       if(draftPresent(box))throw Object.assign(Error('Existing draft preserved. Chat skipped.'),{reasonCode:'draft'});
       if(isBusy())throw Object.assign(Error('This chat is already generating.'),{reasonCode:'busy'});
@@ -167,7 +172,7 @@
         if(stopApply)break; // even on stop, a clicked send can have been accepted
       }
       if(!confirmed)throw Object.assign(Error('Send clicked but no new matching user message appeared. Check the chat before retrying; it may have sent.'),{reasonCode:'unconfirmed'});
-      await report('PM_RESULT',{jobId,chatId:cid,ok:true,reasonCode:'sent'});
+      await report('PM_RESULT',{jobId,chatId:cid,attemptToken,ok:true,reasonCode:'sent'});
     }catch(e){
       await report('PM_RESULT',{jobId,chatId:cid,...fail(e.reasonCode||'error',String(e.message||e),clicked)});
     }finally{activeApply=null;}
@@ -176,6 +181,11 @@
     if(!message||typeof message.type!=='string')return;
     if(message.type==='PM_PING'){sendResponse({ok:true,version:VERSION,projectId:projectId(),chat:chatId()});return;}
     if(message.type==='PM_CONTEXT'){sendResponse({ok:true,projectId:projectId(),count:projectId()?findChats(projectId()).length:0});return;}
+    if(message.type==='PM_READY'){
+      const current=chatId();
+      sendResponse({ok:true,ready:current?.projectId===message.pid&&current?.chatId===message.cid&&!!composer(),chat:current});
+      return;
+    }
     if(message.type==='PM_SCAN'){
       if(projectId()!==message.pid){sendResponse({accepted:false,reason:'Wrong project page'});return;}
       void scan(message);sendResponse({accepted:true});return;
@@ -188,5 +198,6 @@
     if(message.type==='PM_APPLY_ABORT'){stopApply=true;sendResponse({ok:true});}
   };
   globalThis.__PM_LISTENER__=listener;
+  globalThis.__PM_CONTENT_VERSION__=VERSION;
   chrome.runtime.onMessage.addListener(listener);
 })();
