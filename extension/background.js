@@ -1,8 +1,8 @@
-/* PM — Proceed Methodically 0.4 | Chrome MV3 coordinator
+/* PM — Proceed Methodically 0.5 | Chrome MV3 coordinator
  * Single bounded queue; never retries an uncertain send.
  */
 'use strict';
-const VERSION='0.4.0', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
+const VERSION='0.5.0', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
 const PROJECT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/project\/?(?:[?#].*)?$/;
 const CHAT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/c\/([a-zA-Z0-9-]+)\/?$/;
 const DEFAULTS={target:10,prompt:'proceed methodically',effort:'High',delaySeconds:4,keepTabs:true};
@@ -57,7 +57,7 @@ async function begin(message,sender){
   const a=await adapter(tab.id);
   if(a.projectId!==match[1])throw Error('Wrong project tab; refresh and retry.');
   const job={
-    id:'pm-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),status:'scanning',
+    id:'pm-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),version:VERSION,status:'scanning',
     projectId:match[1],projectTabId:tab.id,target:cfg.target,config:cfg,
     startedAt:Date.now(),found:0,total:0,index:0,completed:0,failed:0,
     current:null,queue:[],results:[],error:null,pauseReason:null,consecutiveFailures:0,nextAt:0
@@ -72,7 +72,9 @@ async function begin(message,sender){
   }
   return{ok:true,jobId:job.id};
 }
-let launchBusy=false,finishBusy=false;
+let launchBusy=false;
+const dispatchingTabs=new Set();
+let finishSequence=Promise.resolve();
 function runnable(j){return j?.status==='running'&&!j.current&&j.index<j.queue.length;}
 async function launch(){
   if(launchBusy)return;launchBusy=true;
@@ -91,10 +93,18 @@ async function launch(){
     catch(e){await finish(null,{ok:false,error:'Failed opening tab: '+error(e),reasonCode:'tab'},item);return;}
     job.current={tabId:tab.id,chatId:item.id,title:item.title,phase:'loading',startedAt:Date.now()};
     job.nextAt=0;await save(job);
-    if(tab.status==='complete')await dispatch(tab.id);
+    // Chrome may finish loading between tabs.create() and save(). Recheck it
+    // after queue ownership is durable, rather than trusting the old snapshot.
+    const fresh=await chrome.tabs.get(tab.id).catch(()=>null);
+    if(fresh?.status==='complete')await dispatch(tab.id);
   }finally{launchBusy=false;}
 }
 async function dispatch(tabId){
+  // The navigation event and the tab-creation path can arrive together.
+  // Lock synchronously, before the first await, to avoid two PM_APPLY calls.
+  if(dispatchingTabs.has(tabId))return;
+  dispatchingTabs.add(tabId);
+  try{
   let job=await load();
   if(job?.status!=='running'||job.current?.tabId!==tabId||job.current.phase!=='loading')return;
   job.current.phase='working';job.current.dispatchedAt=Date.now();await save(job);
@@ -112,9 +122,15 @@ async function dispatch(tabId){
   }catch(e){
     await finish(tabId,{ok:false,uncertain:delivered,error:'Dispatch failed: '+error(e),reasonCode:'dispatch'});
   }
+  }finally{dispatchingTabs.delete(tabId);}
 }
 async function finish(tabId,result,explicit=null){
-  if(finishBusy)return;finishBusy=true;
+  // Serialize competing callbacks rather than silently losing the second result.
+  let release;
+  const turn=new Promise(resolve=>{release=resolve;});
+  const previous=finishSequence;
+  finishSequence=turn;
+  await previous;
   try{
     const j=await load();
     if(!j||!['running','paused','stopped'].includes(j.status))return;
@@ -143,7 +159,7 @@ async function finish(tabId,result,explicit=null){
     if(opened&&!j.config.keepTabs){try{await chrome.tabs.remove(opened);}catch{}}
     if(j.status==='done'||j.status==='stopped')await clearWatchdog();
     if(runnable(j))setTimeout(()=>void launch(),Math.max(0,j.nextAt-Date.now()));
-  }finally{finishBusy=false;}
+  }finally{release();}
 }
 async function control(type){
   const j=await load();if(!j)throw Error('No run found.');
