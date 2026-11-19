@@ -1,7 +1,7 @@
-name: Build PM v1 candidate installer
+name: Package PM candidate
 on:
   push:
-    branches: [release/v1-hardening]
+    branches: ['feat/**', 'fix/**', 'release/**']
     paths:
       - 'extension/**'
       - 'scripts/package.mjs'
@@ -14,30 +14,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check code syntax
+      - name: Read candidate version
+        run: echo "PM_VERSION=$(node -p 'require("./extension/manifest.json").version')" >> "$GITHUB_ENV"
+      - name: Check JavaScript
         run: |
           node --check scripts/package.mjs
           node --check extension/background.js
           node --check extension/content.js
+          node --check extension/popup.js
       - name: Build deterministic installer
         run: node scripts/package.mjs --write-repo
-      - name: Verify installer integrity
+      - name: Verify byte-for-byte packaging
         run: |
           node scripts/package.mjs --verify
-          unzip -t docs/downloads/PM-Chrome-Extension-v0.8.0.zip
-          sha256sum docs/downloads/PM-Chrome-Extension-v0.8.0.zip
-      - name: Save installable candidate
+          unzip -t "docs/downloads/PM-Chrome-Extension-v${PM_VERSION}.zip"
+          sha256sum "docs/downloads/PM-Chrome-Extension-v${PM_VERSION}.zip"
+      - name: Upload launch candidate
         uses: actions/upload-artifact@v4
         with:
-          name: PM-v0.8.0-launch-candidate
-          path: docs/downloads/PM-Chrome-Extension-v0.8.0.zip
+          name: PM-v${{ env.PM_VERSION }}-candidate
+          path: docs/downloads/PM-Chrome-Extension-v${PM_VERSION}.zip
           if-no-files-found: error
-      - name: Commit generated installer to release branch
+      - name: Commit generated installer
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add docs/downloads/PM-Chrome-Extension-v0.8.0.zip
+          git add "docs/downloads/PM-Chrome-Extension-v${PM_VERSION}.zip"
           if ! git diff --cached --quiet; then
-            git commit -m 'Build reproducible PM 0.8.0 installer [skip ci]'
-            git push origin HEAD:release/v1-hardening
+            git commit -m "Build reproducible PM ${PM_VERSION} installer [skip ci]"
+            git push origin "HEAD:$GITHUB_REF_NAME"
           fi
