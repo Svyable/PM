@@ -105,3 +105,5 @@ Link this signed-off runbook to the v1 GO/NO-GO tracking issue. Keep the issue o
 - [ ] Test a route that never stabilizes: PM must pause safely and offer Stop.
 
 - [ ] After using the Project launcher, switch to an unrelated Chrome tab; verify the PM side panel stays open in the same browser window (global window-scoped panel).
+
+- [ ] Opening PM from the Project page creates a global, window-wide side panel that remains open when the user switches Chrome tabs.
