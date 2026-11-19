@@ -2,7 +2,7 @@
  * Single bounded queue; never retries an uncertain send.
  */
 'use strict';
-const VERSION='0.7.0', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
+const VERSION='0.8.0', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
 const PROJECT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/project\/?(?:[?#].*)?$/;
 const CHAT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/c\/([a-zA-Z0-9-]+)\/?$/;
 const DEFAULTS={target:10,prompt:'proceed methodically',effort:'High',delaySeconds:4,loadTimeoutSeconds:180,keepTabs:true};
