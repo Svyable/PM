@@ -5,6 +5,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'..','extension','background.js'),'utf8');
+const fleetSource=fs.readFileSync(path.join(__dirname,'..','extension','fleets.js'),'utf8');
 const project='g-p-example';
 const projectURL='https://chatgpt.com/g/'+project+'/project';
 const chats=[
@@ -62,8 +63,8 @@ function setup(options={}){
         if(!injected.has(id))throw Error('Receiving end does not exist');
         const tab=tabs.get(id);if(!tab)throw Error('Tab not found');
         if(msg.type==='PM_PING'){
-          if(id===1||tab.url===projectURL)return{ok:true,version:'0.10.1',projectId:project,chat:null};
-          return{ok:true,version:'0.10.1',projectId:null,chat:{projectId:project,chatId:tab.route}};
+          if(id===1||tab.url===projectURL)return{ok:true,version:'0.11.0',projectId:project,chat:null};
+          return{ok:true,version:'0.11.0',projectId:null,chat:{projectId:project,chatId:tab.route}};
         }
         if(msg.type==='PM_CONTEXT')return{ok:true,projectId:project,count:2,chats,projectTitle:'/demo'};
         if(msg.type==='PM_READY'){
@@ -131,8 +132,11 @@ function setup(options={}){
     alarms:{async create(){},async clear(){},onAlarm:{addListener(){}}},
     action:{async setBadgeText(){},async setBadgeBackgroundColor(){}}
   };
-  const ctx={chrome,console,Date,Math,Promise,URL,setTimeout,clearTimeout};
-  vm.runInNewContext(source,ctx,{filename:'background.js'});
+  const ctx={chrome,console,Date,Math,Promise,URL,setTimeout,clearTimeout,
+    importScripts(file){if(file!=='fleets.js')throw Error('Unexpected import: '+file);}};
+  vm.createContext(ctx);
+  vm.runInContext(fleetSource,ctx,{filename:'fleets.js'});
+  vm.runInContext(source,ctx,{filename:'background.js'});
   function request(type,args={},tabId=null){
     const sender=tabId===null?{url:'chrome-extension://pm/popup.html'}:{tab:tabs.get(tabId)};
     return new Promise(resolve=>{
@@ -216,6 +220,40 @@ function setup(options={}){
   await waitFor(()=>uncertainNew.storage.pmJob?.status==='done','resume remaining new chat',8000);
   assert.deepEqual(uncertainNew.attempts.map(a=>a.chatId),['new:0','new:1']);
   assert.equal(uncertainNew.storage.pmJob.failed,1);
+
+  // Project-level launch: role-specific workstreams with persistent mapping.
+  const seeded=setup();
+  const seedMission='Build a sustainable independent research business with measurable unit economics.';
+  const seedConfig={...seeded.prefs,target:3,mode:'fleet-start',fleetTemplate:'business',mission:seedMission};
+  assert.equal((await seeded.request('PM_START',{tabId:1,config:seedConfig})).ok,true);
+  await waitFor(()=>seeded.storage.pmJob?.status==='done','seed three distinct role chats',14000);
+  assert.equal(seeded.storage.pmJob.completed,3);
+  assert.equal(new Set(seeded.attempts.map(a=>a.prompt)).size,3);
+  assert.ok(seeded.attempts[0].prompt.includes('Opportunity Architect'));
+  assert.ok(seeded.attempts[1].prompt.includes('Customer Investigator'));
+  assert.ok(seeded.attempts[2].prompt.includes('Unit Economics Analyst'));
+  const ledger=seeded.storage.pmProjectFleets?.[project];
+  assert.ok(ledger);
+  assert.equal(ledger.templateId,'business');
+  assert.equal(ledger.threads.length,3);
+  const fleetInfo=await seeded.request('PM_GET_FLEET',{tabId:1});
+  assert.equal(fleetInfo.ok,true);
+  assert.equal(fleetInfo.fleet.threads.length,3);
+  assert.equal((await seeded.request('PM_START',{tabId:1,config:seedConfig})).ok,false,
+    'never accidentally reseed an existing Project fleet');
+  const lastAttempt=seeded.attempts.length;
+  assert.equal((await seeded.request('PM_START',{tabId:1,config:{
+    ...seedConfig,target:3,mode:'fleet-continue',newCount:0
+  }})).ok,true);
+  await waitFor(()=>seeded.storage.pmJob?.status==='done'&&seeded.attempts.length===lastAttempt+3,
+    'continue the original mapped conversations',14000);
+  assert.equal(seeded.storage.pmJob.completed,3);
+  const followups=seeded.attempts.slice(lastAttempt);
+  assert.ok(followups.every(a=>a.kind==='existing'));
+  assert.ok(followups.every(a=>a.prompt.includes('CONTINUATION 1:')));
+  assert.equal(new Set(followups.map(a=>a.prompt)).size,3);
+  assert.deepEqual(followups.map(a=>a.chatId),ledger.threads.map(x=>x.id));
+  assert.equal(seeded.storage.pmProjectFleets[project].cycle,1);
 
   // Critical v1 gate: a final unconfirmed send must NOT display a green
   // completed run, even when all queued conversations have been attempted.
