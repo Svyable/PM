@@ -173,7 +173,7 @@ function setup(options={}){
   assert.equal(repair.storage.pmJob.failed,0);
   assert.equal(repair.storage.pmJob.results[0].routeRepairs,1);
   assert.equal(repair.repairUpdates,1);
-  assert.deepEqual(repair.storage.pmJob.results.map(x=>x.queueId),['chat-one','chat-two']);
+  assert.deepEqual(Array.from(repair.storage.pmJob.results,x=>x.queueId),['chat-one','chat-two']);
 
   const uncertain=setup({uncertainFirst:true});
   await uncertain.request('PM_START',{tabId:1,config:uncertain.prefs});
