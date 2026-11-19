@@ -1,12 +1,91 @@
-/* PM — Proceed Methodically 0.6 | Chrome MV3 coordinator
+/* PM — Proceed Methodically 0.7 | Chrome MV3 coordinator
  * Single bounded queue; never retries an uncertain send.
  */
 'use strict';
-const VERSION='0.6.0', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
+const VERSION='0.7.0', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
 const PROJECT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/project\/?(?:[?#].*)?$/;
 const CHAT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/c\/([a-zA-Z0-9-]+)\/?$/;
 const DEFAULTS={target:10,prompt:'proceed methodically',effort:'High',delaySeconds:4,loadTimeoutSeconds:180,keepTabs:true};
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+
+const CATALOG='pmCatalog', VISITS='pmVisits';
+const projectFromUrl=url=>String(url||'').match(PROJECT)?.[1]||null;
+const chatFromUrl=url=>{
+  const match=String(url||'').split(/[?#]/)[0].match(CHAT);
+  return match?{projectId:match[1],chatId:match[2]}:null;
+};
+let catalogSequence=Promise.resolve();
+function updateCatalog(projectId,rows,complete=false,info={}){
+  if(!projectId||!Array.isArray(rows))return Promise.resolve();
+  const work=async()=>{
+    const stored=(await chrome.storage.local.get(CATALOG))[CATALOG]||{};
+    const old=stored[projectId]||{chats:[],lastUpdated:0,complete:false};
+    const byId=new Map(old.chats.map(x=>[x.id,x]));
+    for(const row of rows){
+      const m=chatFromUrl(row?.url);
+      if(!m||m.projectId!==projectId||m.chatId!==row.id)continue;
+      byId.set(row.id,{...byId.get(row.id),id:row.id,url:row.url,
+        title:String(row.title||'Untitled conversation').slice(0,180),
+        description:String(row.description||'').slice(0,280),
+        updated:String(row.updated||'').slice(0,100)});
+    }
+    stored[projectId]={...old,chats:[...byId.values()].slice(0,1000),
+      lastUpdated:Date.now(),complete:complete||old.complete,
+      scanning:info.scanning??old.scanning??false,
+      projectTitle:info.projectTitle||old.projectTitle||'',
+      scanStep:info.step??old.scanStep??0};
+    await chrome.storage.local.set({[CATALOG]:stored});
+  };
+  const next=catalogSequence.then(work,work);
+  catalogSequence=next.catch(()=>{});
+  return next;
+}
+async function recordVisit(tabId){
+  const tab=await chrome.tabs.get(tabId).catch(()=>null);
+  const target=chatFromUrl(tab?.url);
+  if(!target)return;
+  const key=target.projectId;
+  const all=(await chrome.storage.local.get(VISITS))[VISITS]||{};
+  all[key]=all[key]||{};
+  all[key][target.chatId]=Date.now();
+  await chrome.storage.local.set({[VISITS]:all});
+}
+async function overview(tabId){
+  const tab=await chrome.tabs.get(tabId);
+  const pid=projectFromUrl(tab.url);
+  if(!pid)throw Error('Open the project overview page.');
+  let live=null;
+  try{await adapter(tabId);live=await chrome.tabs.sendMessage(tabId,{type:'PM_CONTEXT'});}
+  catch{}
+  if(live?.projectId===pid&&Array.isArray(live.chats))
+    await updateCatalog(pid,live.chats,false,{projectTitle:live.projectTitle});
+  const [saved,visits,tabs,job]=await Promise.all([
+    chrome.storage.local.get(CATALOG),chrome.storage.local.get(VISITS),
+    chrome.tabs.query({url:'https://chatgpt.com/*'}),load()
+  ]);
+  const catalog=saved[CATALOG]?.[pid]||{chats:[],complete:false};
+  const seen=visits[VISITS]?.[pid]||{};
+  const open=tabs.filter(t=>chatFromUrl(t.url)?.projectId===pid);
+  const uniqueIds=new Set(open.map(t=>chatFromUrl(t.url)?.chatId));
+  const samples=await Promise.allSettled(open.slice(0,24).map(async t=>{
+    const r=await chrome.tabs.sendMessage(t.id,{type:'PM_STATUS'});
+    return r?.ok?r:null;
+  }));
+  const measured=samples.filter(x=>x.status==='fulfilled'&&x.value).map(x=>x.value);
+  const known=catalog.chats||[];
+  const trackedSeen=known.filter(x=>!!seen[x.id]).length;
+  return {ok:true,projectId:pid,projectTitle:catalog.projectTitle||live?.projectTitle||'Project',
+    known:known.length,visible:live?.count??null,complete:!!catalog.complete,
+    scanning:!!catalog.scanning,scanStep:catalog.scanStep||0,
+    lastUpdated:catalog.lastUpdated||0,trackedSeen,notYetVisited:Math.max(0,known.length-trackedSeen),
+    openTabs:open.length,openConversations:uniqueIds.size,
+    generatingObserved:measured.filter(x=>x.generating).length,
+    generatingChecked:measured.length,generatingSampleLimit:Math.min(24,open.length),
+    chats:known.slice(0,1000).map(row=>({...row,visitedAt:seen[row.id]||null,
+      open:uniqueIds.has(row.id)})),
+    job:job?.projectId===pid?job:null};
+}
+
 const error=e=>String(e?.message||e||'Unknown error').slice(0,320);
 async function load(){return(await chrome.storage.local.get(KEY))[KEY]||null;}
 async function save(job){
@@ -65,7 +144,7 @@ async function begin(message,sender){
   const job={
     id:'pm-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),version:VERSION,status:'scanning',
     projectId:match[1],projectTabId:tab.id,target:cfg.target,config:cfg,
-    startedAt:Date.now(),found:0,total:0,index:0,completed:0,failed:0,
+    startedAt:Date.now(),found:0,total:0,index:0,completed:0,failed:0,scanComplete:false,scanStep:0,
     current:null,queue:[],results:[],error:null,pauseReason:null,consecutiveFailures:0,nextAt:0
   };
   await chrome.storage.local.set({[PREF]:cfg});await save(job);await watchdog();
@@ -237,7 +316,7 @@ async function finish(tabId,result,explicit=null){
     }
     j.index++;
     const opened=j.current?.tabId;j.current=null;
-    if(j.index>=j.queue.length&&j.status!=='stopped'){j.status='done';j.pauseReason=null;}
+    if(j.index>=j.queue.length&&j.scanComplete&&j.status!=='stopped'){j.status='done';j.pauseReason=null;}
     else if(j.status==='running'){
       if(row.uncertain){j.status='paused';j.pauseReason='A send was unconfirmed. Inspect '+row.title+' before resuming.';}
       else if(j.consecutiveFailures>=3){j.status='paused';j.pauseReason='Three consecutive failures. Inspect Recent activity before resuming.';}
@@ -285,29 +364,80 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
   const reply=p=>{Promise.resolve(p).then(sendResponse,e=>sendResponse({ok:false,error:error(e)}));return true;};
   const popup=s?.url?.startsWith('chrome-extension://');
   if(m.type==='PM_GET_JOB')return reply(load().then(job=>({ok:true,job})));
+  if(m.type==='PM_HOST_CONTEXT')return reply((async()=>{
+    const pid=projectFromUrl(s.tab?.url);
+    if(!pid)throw Error('Not on a project overview.');
+    return{ok:true,tabId:s.tab.id,projectId:pid};
+  })());
+  if(m.type==='PM_GET_OVERVIEW')return reply(popup?overview(m.tabId):Promise.reject(Error('Extension panel only.')));
+  if(m.type==='PM_INVENTORY_REFRESH')return reply((async()=>{
+    if(!popup)throw Error('Extension panel only.');
+    const tab=await chrome.tabs.get(m.tabId),pid=projectFromUrl(tab.url);
+    if(!pid)throw Error('Open a project page before scanning.');
+    const job=await load();
+    if(job&&['scanning','running'].includes(job.status)&&job.projectId===pid)throw Error('PM is already dispatching. Inventory updates automatically.');
+    await adapter(tab.id);
+    const ack=await chrome.tabs.sendMessage(tab.id,{type:'PM_INVENTORY_SCAN',pid,target:1000});
+    if(!ack?.accepted)throw Error(ack?.reason||'Inventory scan unavailable.');
+    await updateCatalog(pid,[],false,{scanning:true,step:0});
+    return{ok:true};
+  })());
   if(m.type==='PM_GET_PREFS')return reply(chrome.storage.local.get(PREF).then(r=>({ok:true,prefs:r[PREF]||DEFAULTS})));
   if(m.type==='PM_INSPECT_CONTEXT')return reply(popup?inspect(m.tabId):Promise.reject(Error('Popup only.')));
   if(m.type==='PM_START')return reply(begin(m,s));
   if(['PM_PAUSE','PM_RESUME','PM_STOP'].includes(m.type))return reply(popup?control(m.type):Promise.reject(Error('Popup only.')));
+
   if(m.type==='PM_SCAN_PROGRESS')return reply((async()=>{
     const j=await load();
-    if(j?.id===m.jobId&&j.status==='scanning'&&s.tab?.id===j.projectTabId){
-      j.found=Math.max(j.found,Number(m.found)||0);await save(j);
-    }return{ok:true};
+    if(j?.id!==m.jobId||j.scanComplete||!['scanning','running','paused'].includes(j.status)||s.tab?.id!==j.projectTabId)return{ok:false};
+    j.found=Math.max(j.found,Number(m.found)||0);
+    j.scanStep=Number(m.step)||0;
+    const seen=new Set(j.queue.map(x=>x.id));
+    for(const row of (Array.isArray(m.chats)?m.chats:[])){
+      const match=chatFromUrl(row.url);
+      if(!match||match.projectId!==j.projectId||seen.has(row.id)||j.queue.length>=j.target)continue;
+      seen.add(row.id);
+      j.queue.push({id:row.id,url:row.url,title:String(row.title||'Untitled chat').slice(0,180)});
+    }
+    j.total=j.queue.length;
+    if(j.status==='scanning'&&j.total)j.status='running';
+    await save(j);
+    void updateCatalog(j.projectId,m.chats,false,{scanning:true,step:j.scanStep});
+    if(runnable(j))void launch();
+    return{ok:true};
   })());
   if(m.type==='PM_SCANNED')return reply((async()=>{
     const j=await load();
-    if(j?.id!==m.jobId||j?.status!=='scanning'||s.tab?.id!==j.projectTabId)return{ok:false};
-    if(m.error){j.status='error';j.error=error(m.error);await save(j);await clearWatchdog();return{ok:true};}
-    const seen=new Set();
-    j.queue=(Array.isArray(m.chats)?m.chats:[]).filter(it=>{
-      const a=String(it?.url||'').match(CHAT);if(!a||a[1]!==j.projectId||seen.has(a[2]))return false;
-      seen.add(a[2]);return true;
-    }).slice(0,j.target).map(it=>({id:String(it.id),title:String(it.title||'Untitled chat').slice(0,180),url:String(it.url)}));
-    j.total=j.queue.length;j.found=Math.max(j.found,Number(m.found)||0,j.total);
-    j.status=j.total?'running':'error';
-    if(!j.total)j.error='No conversations found in this project.';
-    await save(j);if(j.total)void launch();else await clearWatchdog();return{ok:true};
+    if(j?.id!==m.jobId||!['scanning','running','paused'].includes(j.status)||s.tab?.id!==j.projectTabId)return{ok:false};
+    if(m.error){
+      if(j.total){j.scanComplete=true;j.scanWarning=error(m.error);}
+      else{j.status='error';j.error=error(m.error);}
+    }else{
+      const seen=new Set(j.queue.map(x=>x.id));
+      for(const row of (Array.isArray(m.chats)?m.chats:[])){
+        const match=chatFromUrl(row.url);
+        if(!match||match.projectId!==j.projectId||seen.has(row.id)||j.queue.length>=j.target)continue;
+        seen.add(row.id);j.queue.push({id:row.id,url:row.url,title:String(row.title||'Untitled chat').slice(0,180)});
+      }
+      j.scanComplete=true;
+    }
+    j.found=Math.max(j.found,Number(m.found)||0,j.queue.length);
+    j.total=j.queue.length;
+    if(!j.total&&j.status!=='paused'){j.status='error';j.error=j.error||'No conversations were discovered in this project.';}
+    else if(j.status==='scanning')j.status='running';
+    if(j.scanComplete&&j.index>=j.total&&!j.current&&j.status==='running')j.status='done';
+    await save(j);
+    void updateCatalog(j.projectId,m.chats||[],!!j.scanComplete,{scanning:false,step:j.scanStep});
+    if(j.status==='done'||j.status==='error')await clearWatchdog();
+    else if(runnable(j))void launch();
+    return{ok:true};
+  })());
+  if(m.type==='PM_INVENTORY_PROGRESS'||m.type==='PM_INVENTORY_DONE')return reply((async()=>{
+    const pid=projectFromUrl(s.tab?.url),rows=Array.isArray(m.chats)?m.chats:[];
+    if(!pid||pid!==m.pid)return{ok:false};
+    await updateCatalog(pid,rows,m.type==='PM_INVENTORY_DONE'&&!m.error,
+      {scanning:m.type!=='PM_INVENTORY_DONE',step:Number(m.step)||0});
+    return{ok:true};
   })());
   if(m.type==='PM_RESULT')return reply((async()=>{
     const j=await load();
@@ -317,6 +447,7 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
   })());
 });
 chrome.tabs.onUpdated.addListener((id,change)=>{if(change.status==='complete'||typeof change.url==='string')void dispatch(id);});
+chrome.tabs.onActivated.addListener(info=>{void recordVisit(info.tabId);});
 chrome.tabs.onRemoved.addListener(id=>{void(async()=>{
   const j=await load();
   if(j?.current?.tabId===id)await finish(id,{ok:false,uncertain:j.current.phase==='sending',reasonCode:'closed',error:'Tab closed before confirmation.'});
