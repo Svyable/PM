@@ -3,7 +3,7 @@
   "name": "PM — Proceed Methodically",
   "short_name": "PM",
   "description": "One prompt. Many conversations. Methodically dispatch across existing chats inside a ChatGPT Project.",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "minimum_chrome_version": "120",
   "permissions": [
     "tabs",
@@ -66,5 +66,6 @@
         "https://chatgpt.com/*"
       ]
     }
-  ]
+  ],
+  "version_name": "0.8.0 — v1 Launch Candidate"
 }
