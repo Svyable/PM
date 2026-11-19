@@ -185,7 +185,7 @@ async function launch(){
     }
     let tab;
     try{tab=await chrome.tabs.create({url:item.url,active:false});}
-    catch(e){await finish(null,{ok:false,error:'Failed opening tab: '+error(e),reasonCode:'tab'},item);return;}
+    catch(e){setTimeout(()=>void finish(null,{ok:false,error:'Failed opening tab: '+error(e),reasonCode:'tab'},item),0);return;}
     job.current={tabId:tab.id,chatId:item.id,title:item.title,phase:'waiting',startedAt:Date.now(),attemptToken:job.id+':'+job.index+':'+tab.id};
     job.nextAt=0;await save(job);
     // Start readiness polling immediately, even while the browser reports
