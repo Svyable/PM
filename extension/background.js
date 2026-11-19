@@ -334,10 +334,15 @@ async function finish(tabId,result,explicit=null){
     }
     j.index++;
     const opened=j.current?.tabId;j.current=null;
-    if(j.index>=j.queue.length&&j.scanComplete&&j.status!=='stopped'){j.status='done';j.pauseReason=null;}
-    else if(j.status==='running'){
-      if(row.uncertain){j.status='paused';j.pauseReason='A send was unconfirmed. Inspect '+row.title+' before resuming.';}
-      else if(j.consecutiveFailures>=3){j.status='paused';j.pauseReason='Three consecutive failures. Inspect Recent activity before resuming.';}
+    // A potentially sent message always requires explicit attention,
+    // including when it was the LAST item in the queue.
+    if(row.uncertain&&j.status!=='stopped'){
+      j.status='paused';
+      j.pauseReason='Unconfirmed send for '+row.title+'. Inspect that conversation before acknowledging this run; PM will not retry it automatically.';
+    }else if(j.index>=j.queue.length&&j.scanComplete&&j.status!=='stopped'){
+      j.status='done';j.pauseReason=null;
+    }else if(j.status==='running'){
+      if(j.consecutiveFailures>=3){j.status='paused';j.pauseReason='Three consecutive failures. Inspect Recent activity before resuming.';}
       else j.nextAt=Date.now()+j.config.delaySeconds*1000;
     }
     await save(j);
