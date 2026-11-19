@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PM — Proceed Methodically</title><link rel="stylesheet" href="popup.css"></head>
 <body>
-<header class="top"><div class="logo" aria-hidden="true"><strong>P<span>M</span></strong><i>•••</i></div><div class="brand"><strong>PM <em>/ Proceed Methodically</em></strong><small>One prompt. Many conversations.</small></div><span class="version">v0.10.1</span></header>
+<header class="top"><div class="logo" aria-hidden="true"><strong>P<span>M</span></strong><i>•••</i></div><div class="brand"><strong>PM <em>/ Proceed Methodically</em></strong><small>One prompt. Many conversations.</small></div><span class="version">v0.11</span></header>
 <main>
 <section class="connection" id="connection"><span id="connectionDot" class="signal"></span><span id="connectionMessage">Checking ChatGPT Project…</span><button type="button" id="reconnect" title="Reconnect to current project">Reconnect</button></section>
 <div id="notice" role="status" aria-live="polite" hidden></div>
@@ -15,8 +15,23 @@
     <option value="existing">Continue existing threads</option>
     <option value="new">Start new project threads</option>
     <option value="mixed">Continue existing + start new</option>
+    <option value="fleet-start">Seed a project fleet</option>
+    <option value="fleet-continue">Continue a saved project fleet</option>
   </select>
   <p id="modeHelp" class="smallnote">Continue chats already in this project, or launch fresh conversations that inherit this project's context.</p>
+  <section id="fleetSetup" class="fleetWizard" hidden>
+    <label for="fleetTemplate">Fleet blueprint</label>
+    <select id="fleetTemplate">
+      <option value="brainswarm">✳ Brainswarm — multi-angle problem solving</option>
+      <option value="business">◈ Business Model Lab — strategy and validation</option>
+      <option value="science">⌁ Scientific Research Lab — hypothesis to experiment</option>
+      <option value="proof">∑ Math Proof Engine — conjecture to audited proof</option>
+    </select>
+    <label for="mission">Project-level mission</label>
+    <textarea id="mission" rows="4" maxlength="4000" placeholder="What should this Project accomplish? Include constraints and desired outcomes."></textarea>
+    <p id="fleetStatus" class="smallnote">One mission, distinct roles. PM records each role-to-chat mapping.</p>
+    <div id="fleetPreview" class="fleetPreview" aria-live="polite"></div>
+  </section>
   <label for="target">Conversations <small>1–1,000</small></label>
   <div class="countline"><input type="number" id="target" min="1" max="1000" step="1" value="10" required><span>chats</span></div>
   <div class="presets" role="group" aria-label="Quick conversation counts"><button type="button" data-count="1">1</button><button type="button" data-count="5">5</button><button type="button" data-count="10" class="chosen">10</button><button type="button" data-count="25">25</button><button type="button" data-count="100">100</button></div>
@@ -25,8 +40,10 @@
     <input id="newCount" type="number" value="1" min="1" max="999" step="1">
     <p id="splitSummary" class="smallnote">9 existing + 1 new</p>
   </div>
-  <label for="prompt">Your instruction</label>
-  <textarea id="prompt" maxlength="16000" spellcheck="true" required>proceed methodically</textarea>
+  <div id="singlePromptBlock">
+    <label for="prompt">Your instruction</label>
+    <textarea id="prompt" maxlength="16000" spellcheck="true" required>proceed methodically</textarea>
+  </div>
   <div class="columns"><div><label for="effort">Effort level</label><select id="effort"><option>High</option><option>Instant</option><option>Medium</option><option>Extra High</option><option>Keep current</option></select></div><div><label for="delay">Spacing</label><select id="delay"><option value="2">2 seconds</option><option value="4" selected>4 seconds</option><option value="6">6 seconds</option><option value="10">10 seconds</option><option value="20">20 seconds</option><option value="30">30 seconds</option><option value="60">60 seconds</option></select></div></div>
   <label for="loadTimeout">Slow-page patience <small>Wait for the exact chat before sending</small></label>
   <select id="loadTimeout"><option value="60">1 minute</option><option value="180" selected>3 minutes — recommended</option><option value="300">5 minutes</option><option value="600">10 minutes</option></select>
@@ -48,5 +65,5 @@
 </section>
 </main>
 <footer><span>✦ &nbsp; Make every conversation count.</span><a href="https://svyable.github.io/PM/" target="_blank" rel="noopener">GUIDE ↗</a><span>LOCAL · NO SERVER</span><a href="https://github.com/Svyable/PM/blob/main/docs/privacy.html" target="_blank" rel="noopener noreferrer">PRIVACY ↗</a></footer>
-<script src="popup.js"></script>
+<script src="fleets.js"></script><script src="popup.js"></script>
 </body></html>
