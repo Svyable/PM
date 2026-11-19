@@ -1,7 +1,7 @@
 # PM v1.0 launch gate
 
 **State: NOT APPROVED FOR PUBLIC v1.0 RELEASE**
-**Candidate: 0.8.0**
+**Candidate: 0.9.0**
 **Prepared: November 18, 2026**
 
 Green automated tests demonstrate code paths, not authenticated ChatGPT compatibility or third-party authorization.
@@ -77,3 +77,9 @@ Keep the 0.7 installer on GitHub. Stop the run, inspect uncertain sends before m
 - https://developer.chrome.com/docs/webstore/troubleshooting/
 - [Privacy and data handling](privacy.html)
 - [Source and issue tracker](https://github.com/Svyable/PM)
+
+### New thread creation acceptance
+
+- [ ] One new Project chat with the exact prompt as first user message.
+- [ ] Mixed run with two existing and one new chat.
+- [ ] Uncertain new-chat send is never repeated automatically.
