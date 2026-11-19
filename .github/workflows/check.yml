@@ -8,6 +8,7 @@ on:
       - 'scripts/**'
       - 'docs/downloads/**'
       - '.github/workflows/check.yml'
+      - '.github/workflows/package-candidate.yml'
   pull_request:
   workflow_dispatch:
 permissions:
