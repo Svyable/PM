@@ -19,11 +19,11 @@ async function waitFor(check,label,timeout=12000){
 }
 function setup(options={}){
   const storage={},tabs=new Map(),injected=new Set(),attempts=[],opened=[];
-  tabs.set(1,{id:1,url:projectURL,status:'complete',route:null,ready:true});
+  tabs.set(1,{id:1,windowId:42,url:projectURL,status:'complete',route:null,ready:true});
   let listener,onUpdated,onRemoved,onActivated,nextTabId=1,injections=0,sideOpens=0,repairUpdates=0;
   const chrome={
     runtime:{onMessage:{addListener(fn){listener=fn;}},onStartup:{addListener(){}},onInstalled:{addListener(){}}},
-    sidePanel:{async setPanelBehavior(opts){assert.equal(opts.openPanelOnActionClick,true);},async open(){sideOpens++;}},
+    sidePanel:{async setPanelBehavior(opts){assert.equal(opts.openPanelOnActionClick,true);},async open(opts){assert.equal(opts.windowId,42,'side panel must be window-wide, not tab-specific');assert.equal(opts.tabId,undefined);sideOpens++;}},
     tabs:{
       async query(){return [...tabs.values()];},
       async get(id){if(!tabs.has(id))throw Error('Tab not found');return tabs.get(id);},
@@ -32,7 +32,7 @@ function setup(options={}){
         const expected=opts.url.split('/').at(-1);
         const isFirst=expected==='chat-one',creating=expected==='project';
         const delayed=(options.slowFirst||options.permanentMismatch)&&isFirst;
-        const tab={id,url:delayed?'https://chatgpt.com/':opts.url,status:delayed?'loading':'complete',
+        const tab={id,windowId:42,url:delayed?'https://chatgpt.com/':opts.url,status:delayed?'loading':'complete',
           route:delayed||creating?null:expected,ready:!delayed};
         tabs.set(id,tab);opened.push({id,url:opts.url});
         if(delayed){
@@ -62,8 +62,8 @@ function setup(options={}){
         if(!injected.has(id))throw Error('Receiving end does not exist');
         const tab=tabs.get(id);if(!tab)throw Error('Tab not found');
         if(msg.type==='PM_PING'){
-          if(id===1||tab.url===projectURL)return{ok:true,version:'0.10.0',projectId:project,chat:null};
-          return{ok:true,version:'0.10.0',projectId:null,chat:{projectId:project,chatId:tab.route}};
+          if(id===1||tab.url===projectURL)return{ok:true,version:'0.10.1',projectId:project,chat:null};
+          return{ok:true,version:'0.10.1',projectId:null,chat:{projectId:project,chatId:tab.route}};
         }
         if(msg.type==='PM_CONTEXT')return{ok:true,projectId:project,count:2,chats,projectTitle:'/demo'};
         if(msg.type==='PM_READY'){

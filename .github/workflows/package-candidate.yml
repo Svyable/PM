@@ -49,6 +49,6 @@ jobs:
           fi
           git add "docs/downloads/PM-Chrome-Extension-v${PM_VERSION}.zip"
           if ! git diff --cached --quiet; then
-            git commit -m "Build reproducible PM ${PM_VERSION} installer [skip ci]"
+            git commit -m "Build reproducible PM ${PM_VERSION} installer"
             git push origin "HEAD:$GITHUB_REF_NAME"
           fi
