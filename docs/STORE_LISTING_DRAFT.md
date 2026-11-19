@@ -23,7 +23,7 @@ Choose the number of conversations, prompt, thinking effort, and pacing. PM open
 
 Features:
 - Persistent, collapsible Project overview command center.
-- One prompt across multiple existing project conversations.
+- One prompt across existing conversations, newly created conversations, or a mix of both in a ChatGPT Project.
 - Effort selection (High by default, subject to your ChatGPT UI and plan).
 - Lazy-loaded project chat discovery and local inventory.
 - Per-conversation status, pause/stop, and run-result export.
