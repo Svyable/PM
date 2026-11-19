@@ -56,6 +56,7 @@ PM **streams the first discovered chat batch into the dispatch queue immediately
 **0.8.0 is a hardening build, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
 
 - [v1 go/no-go and live-browser test checklist](docs/V1_LAUNCH_CHECKLIST.md)
+- [Authenticated browser QA runbook](docs/QA_RUNBOOK.md)
 - [Privacy and data-handling disclosure](docs/privacy.html)
 - [Chrome Web Store listing and permission justifications](docs/STORE_LISTING_DRAFT.md)
 
