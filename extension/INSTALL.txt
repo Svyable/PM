@@ -30,3 +30,5 @@ Full Command Center:
 - If ChatGPT redirects before Send, PM will try restoring the original queue tab without double-sending.
 
 The Project launcher opens the window-wide Chrome side panel; switch tabs freely while monitoring PM.
+
+For v0.10.1 the Project launcher opens the Chrome side panel across the whole browser window, so the panel stays available when you switch tabs.
