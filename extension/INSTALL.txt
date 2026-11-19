@@ -1,4 +1,4 @@
-PM 0.9.1 — Proceed Methodically (v1 feature candidate)
+PM 0.10.0 — Proceed Methodically (v1 feature candidate)
 
 Install:
 1. Extract the ZIP.
@@ -21,3 +21,10 @@ Independent candidate, not affiliated with OpenAI. Usage limits and service rule
 Source and support: https://github.com/Svyable/PM
 
 Effort-picker fix: PM now detects an already-selected High effort and waits for slow picker menus. If effort remains unverified, it will not Send. You can choose Keep current to test the rest of the workflow, but that does not set High for you.
+
+Full Command Center:
+- The PM toolbar icon opens Chrome's native resizable side panel. No popup.
+- A small PM launcher on Project overview pages opens the same panel.
+- Reconnect is automatic. Keep a Project overview open; select the intended Project before Launch.
+- Stop any active old-version run before updating the extension.
+- If ChatGPT redirects before Send, PM will try restoring the original queue tab without double-sending.
