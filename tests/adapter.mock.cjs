@@ -39,7 +39,7 @@ function environment(mode){
     getAttribute(k){return k==='aria-label'?'Send prompt':k==='data-testid'?'send-button':null;},
     click(){
       clicks++;box.innerText='';box.textContent='';
-      if(['chat','wrongturn','newchat','newother','newnochat'].includes(mode)){
+      if(['chat','picker','misleading','wrongturn','newchat','newother','newnochat'].includes(mode)){
         messageNodes.push({isConnected:true,getClientRects:()=>[{}],
           innerText:mode==='wrongturn'?'a different message':'proceed methodically',
           querySelector(){return null;}});
