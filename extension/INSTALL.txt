@@ -1,16 +1,21 @@
-PM 0.8.0 — Proceed Methodically (v1 launch candidate)
+PM 0.9.0 — Proceed Methodically (v1 feature candidate)
 
 Install:
-1. Extract this ZIP.
+1. Extract the ZIP.
 2. Open chrome://extensions and enable Developer mode.
-3. Click Load unpacked and choose the extracted extension/ folder.
-4. Reload any already-open ChatGPT Project overview tab.
-5. Confirm the right-side PM command center appears; test one chat.
+3. Choose Load unpacked, then select the extracted extension/ folder.
+4. Reload an already-open ChatGPT Project overview page.
 
-Only send after checking that your requested effort is available.
-Do not run a large batch until a real one-chat send has been verified.
-Pause/Stop cannot undo prompts already sent.
+Choose what PM does:
+- Continue existing: send your instruction to existing threads in the Project.
+- Start new: submit your instruction as the FIRST message in brand-new conversations inside the Project.
+- Mixed: select how many NEW threads to create; the rest continue existing chats.
+  PM continues existing chats first and then creates new threads.
 
-Official documentation: https://github.com/Svyable/PM
-Independent beta, not affiliated with OpenAI.
-Normal service plan limits, restrictions, and applicable terms apply.
+Start with a test run of ONE conversation (High effort or Keep current).
+Review the actual message and project membership before scaling.
+New chats are created by sending a message; PM does not create blank threads.
+Unconfirmed sends are NEVER retried automatically.
+
+Independent candidate, not affiliated with OpenAI. Usage limits and service rules apply.
+Source and support: https://github.com/Svyable/PM
