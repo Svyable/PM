@@ -152,7 +152,7 @@
   async function apply({jobId,pid,cid,prompt,effort,attemptToken}){
     stopApply=false;const current=chatId();
     if(!current||current.projectId!==pid||current.chatId!==cid){await report('PM_RESULT',{jobId,chatId:cid,attemptToken,...fail('wrong-chat','Chat page did not match the queued conversation.')});return;}
-    if(activeApply!==null){await report('PM_RESULT',{jobId,chatId:cid,...fail('busy','PM is already handling this tab.')});return;}
+    if(activeApply!==null){await report('PM_RESULT',{jobId,chatId:cid,attemptToken,...fail('busy','PM is already handling this tab.')});return;}
     activeApply=jobId;let clicked=false;
     try{
       let box=null;
@@ -186,7 +186,7 @@
       if(!confirmed)throw Object.assign(Error('Send clicked but no new matching user message appeared. Check the chat before retrying; it may have sent.'),{reasonCode:'unconfirmed'});
       await report('PM_RESULT',{jobId,chatId:cid,attemptToken,ok:true,reasonCode:'sent'});
     }catch(e){
-      await report('PM_RESULT',{jobId,chatId:cid,...fail(e.reasonCode||'error',String(e.message||e),clicked)});
+      await report('PM_RESULT',{jobId,chatId:cid,attemptToken,...fail(e.reasonCode||'error',String(e.message||e),clicked)});
     }finally{activeApply=null;}
   }
   const listener=(message,sender,sendResponse)=>{
