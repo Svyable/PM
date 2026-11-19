@@ -20,9 +20,10 @@ async function waitFor(check,label,timeout=12000){
 function setup(options={}){
   const storage={},tabs=new Map(),injected=new Set(),attempts=[],opened=[];
   tabs.set(1,{id:1,url:projectURL,status:'complete',route:null,ready:true});
-  let listener,onUpdated,onRemoved,onActivated,nextTabId=1,injections=0;
+  let listener,onUpdated,onRemoved,onActivated,nextTabId=1,injections=0,sideOpens=0,repairUpdates=0;
   const chrome={
     runtime:{onMessage:{addListener(fn){listener=fn;}},onStartup:{addListener(){}},onInstalled:{addListener(){}}},
+    sidePanel:{async setPanelBehavior(opts){assert.equal(opts.openPanelOnActionClick,true);},async open(){sideOpens++;}},
     tabs:{
       async query(){return [...tabs.values()];},
       async get(id){if(!tabs.has(id))throw Error('Tab not found');return tabs.get(id);},
@@ -46,13 +47,23 @@ function setup(options={}){
         }else setTimeout(()=>onUpdated?.(id,{status:'complete'}),0);
         return tab;
       },
+      async update(id,opts){
+        const tab=tabs.get(id);
+        if(!tab)throw Error('Tab not found');
+        repairUpdates++;
+        tab.url=opts.url;
+        tab.route=opts.url.split('/').at(-1);
+        tab.ready=true;tab.status='complete';
+        setTimeout(()=>onUpdated?.(id,{status:'complete',url:opts.url}),0);
+        return tab;
+      },
       async remove(id){tabs.delete(id);setTimeout(()=>onRemoved?.(id),0);},
       async sendMessage(id,msg){
         if(!injected.has(id))throw Error('Receiving end does not exist');
         const tab=tabs.get(id);if(!tab)throw Error('Tab not found');
         if(msg.type==='PM_PING'){
-          if(id===1||tab.url===projectURL)return{ok:true,version:'0.9.1',projectId:project,chat:null};
-          return{ok:true,version:'0.9.1',projectId:null,chat:{projectId:project,chatId:tab.route}};
+          if(id===1||tab.url===projectURL)return{ok:true,version:'0.10.0',projectId:project,chat:null};
+          return{ok:true,version:'0.10.0',projectId:null,chat:{projectId:project,chatId:tab.route}};
         }
         if(msg.type==='PM_CONTEXT')return{ok:true,projectId:project,count:2,chats,projectTitle:'/demo'};
         if(msg.type==='PM_READY'){
@@ -85,6 +96,12 @@ function setup(options={}){
             (options.uncertainSecond&&msg.cid==='chat-two')||
             (options.uncertainNew&&creating&&msg.cid==='new:0');
           const skipped=options.draftFirst&&msg.cid==='chat-one';
+          const wrongRoute=options.routeChangedBeforeSend&&msg.cid==='chat-one'&&!tab.routeFixedOnce;
+          if(wrongRoute){
+            tab.routeFixedOnce=true;
+            tab.url='https://chatgpt.com/g/'+project+'/c/chat-two';
+            tab.route='chat-two';
+          }
           const created=creating?'generated-'+id:null;
           if(creating){
             tab.route=created;
@@ -93,9 +110,9 @@ function setup(options={}){
           }
           setTimeout(()=>void request('PM_RESULT',{
             jobId:msg.jobId,chatId:msg.cid,attemptToken:msg.attemptToken,
-            ok:!uncertain&&!skipped,uncertain,
-            reasonCode:uncertain?'unconfirmed':skipped?'draft':'sent',
-            error:uncertain?'No matching rendered user message':skipped?'Existing draft preserved':null,
+            ok:!uncertain&&!skipped&&!wrongRoute,uncertain,
+            reasonCode:wrongRoute?'wrong-chat':uncertain?'unconfirmed':skipped?'draft':'sent',
+            error:wrongRoute?'ChatGPT changed conversations before Send. Nothing was submitted.':uncertain?'No matching rendered user message':skipped?'Existing draft preserved':null,
             ...(creating?{createdChatId:created,createdUrl:tab.url}:{})
           },id),20);
           return{accepted:true};
@@ -125,7 +142,7 @@ function setup(options={}){
   }
   const prefs={target:2,prompt:'proceed methodically',effort:'High',
     delaySeconds:2,loadTimeoutSeconds:180,keepTabs:true};
-  return{request,prefs,storage,attempts,opened,tabs,activate(tabId){onActivated?.({tabId});},get injections(){return injections;}};
+  return{request,prefs,storage,attempts,opened,tabs,activate(tabId){onActivated?.({tabId});},get injections(){return injections;},get sideOpens(){return sideOpens;},get repairUpdates(){return repairUpdates;}};
 }
 (async()=>{
   const normal=setup();
@@ -136,6 +153,27 @@ function setup(options={}){
   assert.equal(normal.attempts.length,2,'tab update must not double send');
   assert.equal(new Set(normal.attempts.map(a=>a.token)).size,2);
   assert.ok(normal.injections>=3,'dynamic injection should attach to each tab');
+
+  const projectSelection=setup();
+  const found=await projectSelection.request('PM_FIND_PROJECT',{});
+  assert.equal(found.ok,true);
+  assert.equal(found.tabId,1);
+  assert.equal(found.projectId,project);
+  const openedPanel=await projectSelection.request('PM_OPEN_PANEL',{},1);
+  assert.equal(openedPanel.ok,true);
+  assert.equal(projectSelection.sideOpens,1,'project button must open native side panel');
+
+  // User-reported 0/2 pause: ChatGPT changes route AFTER the readiness check
+  // but BEFORE Send. Adapter explicitly reports no click; PM restores the
+  // original tab route and retries this queue item once, never sends wrong.
+  const repair=setup({routeChangedBeforeSend:true});
+  await repair.request('PM_START',{tabId:1,config:repair.prefs});
+  await waitFor(()=>repair.storage.pmJob?.status==='done','pre-send redirect recovery',10000);
+  assert.equal(repair.storage.pmJob.completed,2);
+  assert.equal(repair.storage.pmJob.failed,0);
+  assert.equal(repair.storage.pmJob.results[0].routeRepairs,1);
+  assert.equal(repair.repairUpdates,1);
+  assert.deepEqual(repair.storage.pmJob.results.map(x=>x.queueId),['chat-one','chat-two']);
 
   const uncertain=setup({uncertainFirst:true});
   await uncertain.request('PM_START',{tabId:1,config:uncertain.prefs});
