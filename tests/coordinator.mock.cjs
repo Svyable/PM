@@ -252,7 +252,7 @@ function setup(options={}){
   assert.ok(followups.every(a=>a.kind==='existing'));
   assert.ok(followups.every(a=>a.prompt.includes('CONTINUATION 1:')));
   assert.equal(new Set(followups.map(a=>a.prompt)).size,3);
-  assert.deepEqual(followups.map(a=>a.chatId),ledger.threads.map(x=>x.id));
+  assert.deepEqual(followups.map(a=>a.chatId),Array.from(ledger.threads,x=>x.id));
   assert.equal(seeded.storage.pmProjectFleets[project].cycle,1);
 
   // Critical v1 gate: a final unconfirmed send must NOT display a green
