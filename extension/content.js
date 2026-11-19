@@ -1,9 +1,9 @@
-/* PM — Proceed Methodically 0.7 | ChatGPT UI adapter
+/* PM — Proceed Methodically 0.9 | ChatGPT UI adapter
  * Operates only on visible browser UI. No private endpoints or remote telemetry.
  */
 (() => {
   'use strict';
-  const VERSION='0.8.0';
+  const VERSION='0.9.0';
   const old=globalThis.__PM_LISTENER__;
   try {
     if(old&&chrome.runtime.onMessage.hasListener?.(old)){
@@ -149,9 +149,15 @@
     return candidates.some(el=>norm(el.innerText||el.textContent)===text);
   }
   function fail(reasonCode,error,uncertain=false){return{ok:false,reasonCode,error,uncertain};}
-  async function apply({jobId,pid,cid,prompt,effort,attemptToken}){
-    stopApply=false;const current=chatId();
-    if(!current||current.projectId!==pid||current.chatId!==cid){await report('PM_RESULT',{jobId,chatId:cid,attemptToken,...fail('wrong-chat','Chat page did not match the queued conversation.')});return;}
+  async function apply({jobId,pid,cid,prompt,effort,attemptToken,kind='existing'}){
+    stopApply=false;
+    const creating=kind==='new',current=chatId();
+    const correct=creating?projectId()===pid&&!current:current?.projectId===pid&&current?.chatId===cid;
+    if(!correct){
+      await report('PM_RESULT',{jobId,chatId:cid,attemptToken,
+        ...fail('wrong-chat',creating?'Project overview changed before new-chat submission.':'Chat page did not match the queued conversation.')});
+      return;
+    }
     if(activeApply!==null){await report('PM_RESULT',{jobId,chatId:cid,attemptToken,...fail('busy','PM is already handling this tab.')});return;}
     activeApply=jobId;let clicked=false;
     try{
@@ -173,18 +179,30 @@
       for(let i=0;i<18;i++){send=sendButton();if(send&&!send.disabled&&send.getAttribute('aria-disabled')!=='true')break;await sleep(180);}
       if(!send||send.disabled||send.getAttribute('aria-disabled')==='true')throw Object.assign(Error('Send button not ready. Prompt left in the composer.'),{reasonCode:'send'});
       if(stopApply)throw Error('Aborted before send.');
+      const live=chatId();
+      if(creating?(projectId()!==pid||!!live):(live?.projectId!==pid||live?.chatId!==cid))
+        throw Object.assign(Error('The target page navigated away before Send; prompt was NOT submitted.'),{reasonCode:'wrong-chat'});
       const before=new Set(userMessages());
+      // New project chat must not accidentally resolve to an already-visible
+      // conversation when the UI navigates after submission.
+      const knownBefore=creating?new Set(findChats(pid).map(row=>row.id)):new Set();
       clicked=true;send.click(); // exactly one click; never automatically repeat it
       let confirmed=false;
       for(let i=0;i<60;i++){
         await sleep(320);
         // A matching new user message is required; editor clearing is insufficient.
         const fresh=userMessages().filter(el=>!before.has(el));
-        if(fresh.some(el=>userMessageMatches(el,prompt))){confirmed=true;break;}
+        if(fresh.some(el=>userMessageMatches(el,prompt))){
+          if(!creating){confirmed=true;break;}
+          const next=chatId();
+          if(next?.projectId===pid&&!knownBefore.has(next.chatId)){confirmed=true;break;}
+        }
         if(stopApply)break; // even on stop, a clicked send can have been accepted
       }
       if(!confirmed)throw Object.assign(Error('Send clicked but no new matching user message appeared. Check the chat before retrying; it may have sent.'),{reasonCode:'unconfirmed'});
-      await report('PM_RESULT',{jobId,chatId:cid,attemptToken,ok:true,reasonCode:'sent'});
+      const created=creating?chatId():null;
+      await report('PM_RESULT',{jobId,chatId:cid,attemptToken,ok:true,reasonCode:'sent',
+        ...(creating?{createdChatId:created.chatId,createdUrl:location.origin+'/g/'+pid+'/c/'+created.chatId}:{})});
     }catch(e){
       await report('PM_RESULT',{jobId,chatId:cid,attemptToken,...fail(e.reasonCode||'error',String(e.message||e),clicked)});
     }finally{activeApply=null;}
@@ -208,6 +226,11 @@
       sendResponse({ok:true,ready:current?.projectId===message.pid&&current?.chatId===message.cid&&!!composer(),chat:current});
       return;
     }
+    if(message.type==='PM_NEW_READY'){
+      const correct=projectId()===message.pid&&!chatId();
+      sendResponse({ok:true,ready:correct&&!!composer(),projectId:projectId()});
+      return;
+    }
     if(message.type==='PM_SCAN'){
       if(projectId()!==message.pid||scanBusy){sendResponse({accepted:false,reason:scanBusy?'A project scan is already active.':'Wrong project page.'});return;}
       void scan(message);sendResponse({accepted:true});return;
@@ -218,7 +241,10 @@
     }
     if(message.type==='PM_SCAN_ABORT'){stopScan=true;sendResponse({ok:true});return;}
     if(message.type==='PM_APPLY'){
-      if(!chatId()||activeApply!==null){sendResponse({accepted:false,reason:'Chat unavailable or busy.'});return;}
+      const valid=message.kind==='new'
+        ?projectId()===message.pid&&!chatId()
+        :chatId()?.projectId===message.pid&&chatId()?.chatId===message.cid;
+      if(!valid||activeApply!==null){sendResponse({accepted:false,reason:'Target project/chat unavailable or busy.'});return;}
       void apply(message);sendResponse({accepted:true});return;
     }
     if(message.type==='PM_APPLY_ABORT'){stopApply=true;sendResponse({ok:true});}
