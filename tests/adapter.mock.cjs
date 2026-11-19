@@ -19,19 +19,19 @@ function environment(mode){
     if(mode==='misleading'&&sel==='button[data-composer-navigation-target="reasoning"]')return wrongNav;
     return sel==='button[data-selected-reasoning-effort]'?effort:null;
   }};
-  let currentEffort=mode==='picker'?'medium':'high';
+  let currentEffort=['picker','pickerRoute'].includes(mode)?'medium':'high';
   const effort={
-    isConnected:mode!=='noeffort',getClientRects:()=>[{}],textContent:mode==='picker'?'Medium':'High',
+    isConnected:mode!=='noeffort',getClientRects:()=>[{}],textContent:['picker','pickerRoute'].includes(mode)?'Medium':'High',
     getAttribute(k){return k==='data-selected-reasoning-effort'?currentEffort:null;},
     querySelector(){return null;},
-    click(){effortClicks++;if(mode==='picker')menuOpen=true;}
+    click(){effortClicks++;if(['picker','pickerRoute'].includes(mode))menuOpen=true;}
   };
   const wrongNav={isConnected:true,getClientRects:()=>[{}],textContent:'Reasoning options',
     getAttribute(){return null;},click(){wrongClicks++;}};
   const highOption={
     isConnected:true,getClientRects:()=>[{}],innerText:'High\nMore reasoning time',textContent:'High\nMore reasoning time',
     getAttribute(){return null;},querySelector(){return null;},
-    click(){currentEffort='high';effort.textContent='High';menuOpen=false;}
+    click(){currentEffort='high';effort.textContent='High';menuOpen=false;if(mode==='pickerRoute')location.pathname='/g/'+project+'/c/chat-2';}
   };
   const messageNodes=mode==='existingmatch'?[{isConnected:true,getClientRects:()=>[{}],innerText:'proceed methodically',querySelector(){return null;}}]:[];
   const send={
@@ -92,7 +92,7 @@ async function until(check,label,ms=2500){
 }
 (async()=>{
   const scan=environment('project');
-  assert.equal(scan.receive({type:'PM_PING'}).version,'0.9.1');
+  assert.equal(scan.receive({type:'PM_PING'}).version,'0.10.0');
   assert.equal(scan.receive({type:'PM_SCAN',jobId:'scan1',pid:project,target:2}).accepted,true);
   await until(()=>scan.messages.some(m=>m.type==='PM_SCANNED'),'scan result');
   const found=scan.messages.find(m=>m.type==='PM_SCANNED');
@@ -139,6 +139,16 @@ async function until(check,label,ms=2500){
     assert.equal(result.reasonCode,'effort');
     assert.equal(failed.clicks,0,mode+' error must not send');
   }
+
+  const late=environment('pickerRoute');
+  assert.equal(late.receive({type:'PM_APPLY',jobId:'late-navigation',pid:project,cid:'chat-1',
+    attemptToken:'late-nav-token',prompt:'proceed methodically',effort:'High'}).accepted,true);
+  await until(()=>late.messages.some(m=>m.type==='PM_RESULT'),'late route mismatch');
+  const lateResult=late.messages.find(m=>m.type==='PM_RESULT');
+  assert.equal(lateResult.ok,false);
+  assert.equal(lateResult.uncertain,false);
+  assert.equal(lateResult.reasonCode,'wrong-chat');
+  assert.equal(late.clicks,0,'never Send after an effort-picker route change');
 
   for(const mode of ['picker','misleading']){
     const test=environment(mode);
