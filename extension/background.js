@@ -158,12 +158,22 @@ async function begin(message,sender){
   return{ok:true,jobId:job.id};
 }
 let launchBusy=false;
+let jobLockTail=Promise.resolve();
+async function withJobLock(fn){
+  let release;
+  const turn=new Promise(resolve=>{release=resolve;});
+  const previous=jobLockTail;
+  jobLockTail=turn;
+  await previous;
+  try{return await fn();}finally{release();}
+}
 const dispatchingTabs=new Set();
 let finishSequence=Promise.resolve();
 function runnable(j){return j?.status==='running'&&!j.current&&j.index<j.queue.length;}
 async function launch(){
   if(launchBusy)return;launchBusy=true;
   try{
+    return await withJobLock(async()=>{
     const job=await load();if(!runnable(job))return;
     if(job.nextAt>Date.now()){
       setTimeout(()=>void launch(),Math.min(60000,job.nextAt-Date.now()+30));
@@ -181,6 +191,7 @@ async function launch(){
     // Start readiness polling immediately, even while the browser reports
     // "loading". Waiting for "complete" delayed slow ChatGPT pages unnecessarily.
     void dispatch(tab.id);
+    });
   }finally{launchBusy=false;}
 }
 function currentOwned(j,tabId,token,cid){
@@ -286,6 +297,7 @@ async function finish(tabId,result,explicit=null){
   finishSequence=turn;
   await previous;
   try{
+    await withJobLock(async()=>{
     const j=await load();
     if(!j||!['running','paused','stopped'].includes(j.status))return;
     if(tabId!==null&&j.current?.tabId!==tabId)return;
@@ -326,6 +338,7 @@ async function finish(tabId,result,explicit=null){
     if(opened&&!j.config.keepTabs){try{await chrome.tabs.remove(opened);}catch{}}
     if(j.status==='done'||j.status==='stopped')await clearWatchdog();
     if(runnable(j))setTimeout(()=>void launch(),Math.max(0,j.nextAt-Date.now()));
+    });
   }finally{release();}
 }
 async function control(type){
@@ -387,7 +400,7 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
   if(m.type==='PM_START')return reply(begin(m,s));
   if(['PM_PAUSE','PM_RESUME','PM_STOP'].includes(m.type))return reply(popup?control(m.type):Promise.reject(Error('Popup only.')));
 
-  if(m.type==='PM_SCAN_PROGRESS')return reply((async()=>{
+  if(m.type==='PM_SCAN_PROGRESS')return reply(withJobLock(async()=>{
     const j=await load();
     if(j?.id!==m.jobId||j.scanComplete||!['scanning','running','paused'].includes(j.status)||s.tab?.id!==j.projectTabId)return{ok:false};
     j.found=Math.max(j.found,Number(m.found)||0);
@@ -405,8 +418,8 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
     void updateCatalog(j.projectId,m.chats,false,{scanning:true,step:j.scanStep});
     if(runnable(j))void launch();
     return{ok:true};
-  })());
-  if(m.type==='PM_SCANNED')return reply((async()=>{
+  }));
+  if(m.type==='PM_SCANNED')return reply(withJobLock(async()=>{
     const j=await load();
     if(j?.id!==m.jobId||!['scanning','running','paused'].includes(j.status)||s.tab?.id!==j.projectTabId)return{ok:false};
     if(m.error){
@@ -431,7 +444,7 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
     if(j.status==='done'||j.status==='error')await clearWatchdog();
     else if(runnable(j))void launch();
     return{ok:true};
-  })());
+  }));
   if(m.type==='PM_INVENTORY_PROGRESS'||m.type==='PM_INVENTORY_DONE')return reply((async()=>{
     const pid=projectFromUrl(s.tab?.url),rows=Array.isArray(m.chats)?m.chats:[];
     if(!pid||pid!==m.pid)return{ok:false};
