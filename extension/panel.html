@@ -2,9 +2,9 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PM / Project Command Center</title><link rel="stylesheet" href="popup.css"><link rel="stylesheet" href="panel.css"></head>
 <body data-pm-mode="panel">
-<header class="top"><div class="logo" aria-hidden="true"><strong>P<span>M</span></strong><i>•••</i></div><div class="brand"><strong>PM <em>/ Command Center</em></strong><small>Proceed Methodically · Your project cockpit</small></div><span class="version">v0.9</span></header>
+<header class="top" aria-label="PM full side panel"><div class="logo" aria-hidden="true"><strong>P<span>M</span></strong><i>•••</i></div><div class="brand"><strong>PM <em>/ Command Center</em></strong><small>Full-height Project command center</small></div><span class="version">v0.10</span></header>
 <main>
-<section class="connection" id="connection"><span id="connectionDot" class="signal"></span><span id="connectionMessage">Connecting to project…</span><button id="reconnect" type="button">Reconnect</button></section>
+<section class="connection" id="connection" role="status" aria-live="polite"><span id="connectionDot" class="signal"></span><span id="connectionMessage">Detecting current Project…</span></section>
 <div id="notice" role="status" aria-live="polite" hidden></div>
 <section class="summary" id="projectSummary">
 <div class="sectiontitle"><span class="eyebrow">PROJECT INTELLIGENCE</span><span id="projectLabel" class="projectLabel">/project</span></div>
@@ -18,18 +18,8 @@
 <div class="inventoryActions"><button type="button" id="scanProject">Scan entire project</button><button type="button" id="refreshOverview">Refresh status</button></div>
 <p class="footnote">Visited ≠ read. Generating is detectable only in responsive open tabs; ChatGPT does not expose universal unread or background-generation counts here.</p>
 </section>
-<section id="run" hidden>
- <div class="runhead"><span class="eyebrow">LIVE DISPATCH</span><span class="state" id="state">Running</span></div>
- <div class="runmetric"><strong id="progress">0</strong><span id="progressTotal">/ 0</span><em id="percentage">0%</em></div>
- <div class="progressTrack"><div id="progressBar"></div></div>
- <p id="runMessage" class="runMessage">Preparing conversations…</p>
- <div class="stats"><div><strong id="sent">0</strong><span>Verified sent</span></div><div><strong id="failed">0</strong><span>Skipped / failed</span></div><div><strong id="found">0</strong><span>Discovered</span></div></div>
- <div class="actions"><button type="button" id="pause">Pause</button><button type="button" id="resume" hidden>Resume</button><button type="button" id="stop" class="danger">Stop</button><button type="button" id="newRun" hidden>New run</button></div>
- <div class="activityTitle"><strong>Dispatch activity</strong><button type="button" id="export">Export JSON ↗</button></div>
- <div id="activity" class="activity" aria-live="polite"></div>
-</section>
 <section id="setup" class="dispatchForm">
- <div class="sectiontitle"><span class="eyebrow">DISPATCH A NEW COMMAND</span><span class="introIcon">↗</span></div>
+ <div class="sectiontitle"><span class="eyebrow">NEW DISPATCH</span><span class="introIcon">↗</span></div>
  <form id="launchForm">
   <label for="mode">What should PM do?</label>
   <select id="mode" aria-describedby="modeHelp">
@@ -55,8 +45,18 @@
  </form>
  <p class="smallnote">Starts sending from the first discovered batch. Each message is checked; normal ChatGPT limits apply.</p>
 </section>
+<section id="run" hidden>
+ <div class="runhead"><span class="eyebrow">LIVE DISPATCH</span><span class="state" id="state">Running</span></div>
+ <div class="runmetric"><strong id="progress">0</strong><span id="progressTotal">/ 0</span><em id="percentage">0%</em></div>
+ <div class="progressTrack"><div id="progressBar"></div></div>
+ <p id="runMessage" class="runMessage">Preparing conversations…</p>
+ <div class="stats"><div><strong id="sent">0</strong><span>Verified sent</span></div><div><strong id="failed">0</strong><span>Skipped / failed</span></div><div><strong id="found">0</strong><span>Discovered</span></div></div>
+ <div class="actions"><button type="button" id="pause">Pause</button><button type="button" id="resume" hidden>Resume</button><button type="button" id="stop" class="danger">Stop</button><button type="button" id="newRun" hidden>New run</button></div>
+ <div class="activityTitle"><strong>Dispatch activity</strong><button type="button" id="export">Export JSON ↗</button></div>
+ <div id="activity" class="activity" aria-live="polite"></div>
+</section>
 <section class="inventory">
- <div class="sectiontitle"><span class="eyebrow">CONVERSATION INVENTORY</span><span id="inventoryCount" class="projectLabel">0 known</span></div>
+ <div class="sectiontitle"><span class="eyebrow">PROJECT CONVERSATIONS</span><span id="inventoryCount" class="projectLabel">0 known</span></div>
  <label for="inventoryFilter">Find a conversation</label><input id="inventoryFilter" type="search" placeholder="Search titles or snippets…" autocomplete="off">
  <div class="inventoryList" id="inventoryList" aria-live="polite"><p class="empty">Discovering conversations…</p></div>
 </section>

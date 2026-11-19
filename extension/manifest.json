@@ -2,21 +2,21 @@
   "manifest_version": 3,
   "name": "PM — Proceed Methodically",
   "short_name": "PM",
-  "description": "One prompt. Many conversations. Methodically dispatch across existing chats inside a ChatGPT Project.",
-  "version": "0.9.1",
+  "description": "Project command center to continue existing threads or start new ChatGPT Project conversations.",
+  "version": "0.10.0",
   "minimum_chrome_version": "120",
   "permissions": [
     "tabs",
     "storage",
     "alarms",
-    "scripting"
+    "scripting",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://chatgpt.com/*"
   ],
   "action": {
     "default_title": "PM — Proceed Methodically",
-    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -53,19 +53,8 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "panel.html",
-        "panel.css",
-        "panel.js",
-        "popup.js",
-        "popup.css"
-      ],
-      "matches": [
-        "https://chatgpt.com/*"
-      ]
-    }
-  ],
-  "version_name": "0.9.1 — Effort Picker Compatibility Candidate"
+  "version_name": "0.10.0 — Full Side Panel Release Candidate",
+  "side_panel": {
+    "default_path": "panel.html"
+  }
 }

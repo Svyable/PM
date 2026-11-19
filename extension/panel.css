@@ -29,3 +29,28 @@ main{padding:14px 14px 16px}.connection{padding:9px 10px;margin-bottom:13px;gap:
 #inventoryCount{font-size:10px}footer{position:sticky;bottom:0;background:#0b0e18eF;backdrop-filter:blur(12px);padding:11px 13px;font-size:9px}
 @media(max-width:350px){main{padding:10px}.summary,.dispatchForm,.inventory,#run{padding:10px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+
+/* Native Chrome side panel: resizable, edge-to-edge, no injected overlay. */
+html,body{min-width:0;height:100%;overscroll-behavior-y:contain}
+body[data-pm-mode="panel"]{width:100%;max-width:none;margin:0;min-height:100vh}
+body[data-pm-mode="panel"] main{width:100%;max-width:none;margin:0 auto;padding:14px}
+body[data-pm-mode="panel"] .top{padding:15px 16px;position:sticky;top:0}
+body[data-pm-mode="panel"] .connection{padding:8px 11px;border-radius:9px}
+body[data-pm-mode="panel"] .dispatchForm{border-color:#566397;background:linear-gradient(160deg,#151b30,#0e1423)}
+body[data-pm-mode="panel"] .dispatchForm .launch{min-height:48px}
+body[data-pm-mode="panel"] #run .activity{max-height:280px}
+body[data-pm-mode="panel"] .inventoryList{max-height:520px}
+body[data-pm-mode="panel"] footer{display:flex;justify-content:space-between}
+@media(min-width:620px){
+  body[data-pm-mode="panel"] main{
+    display:grid;grid-template-columns:minmax(270px,1.13fr) minmax(245px,.87fr);
+    gap:12px;align-items:start
+  }
+  body[data-pm-mode="panel"] .summary{grid-column:2;grid-row:1;margin:0}
+  body[data-pm-mode="panel"] .dispatchForm{grid-column:1;grid-row:1/span 2;margin:0}
+  body[data-pm-mode="panel"] #run{grid-column:2;grid-row:2;margin:0}
+  body[data-pm-mode="panel"] .inventory{grid-column:1/-1;margin:0}
+  body[data-pm-mode="panel"] .top{padding:18px 22px}
+  body[data-pm-mode="panel"] .inventoryList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+}

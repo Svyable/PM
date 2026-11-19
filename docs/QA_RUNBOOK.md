@@ -93,3 +93,13 @@ Link this signed-off runbook to the v1 GO/NO-GO tracking issue. Keep the issue o
 - [ ] Repeat while the PM-created chat tab remains in the background and another Chrome tab is active. Record effort result and load timings.
 - [ ] Repeat the same run with Keep current. Treat a successful send here as evidence the effort selector is the failure, not evidence of High effort.
 - [ ] If Chrome Memory Saver or Energy Saver is enabled, record that and test again with chatgpt.com allowed to stay active. Never assume a background tab has completed simply because Chrome reports it loaded.
+
+## Smoke test H: native Chrome side panel and transient routes (v0.10)
+
+- [ ] From a Project overview, click the PM extension icon and confirm Chrome opens the native resizable side panel, not a popup.
+- [ ] From the Project page, click the lower-right PM launcher; it should open the same panel without changing ChatGPT's layout.
+- [ ] All launch settings remain visible and editable even if a previous run is paused; no Reconnect click is required.
+- [ ] With multiple Project tabs, activate the intended Project before launching and confirm PM targets it.
+- [ ] While two test conversations dispatch, freely work in another Chrome tab. Confirm progress remains visible when returning to the PM panel.
+- [ ] Simulate a pre-send route change in a disposable Project and inspect that PM reopens the queued URL in the same tab, with bounded retries. Never mark a wrong-chat send as successful.
+- [ ] Test a route that never stabilizes: PM must pause safely and offer Stop.

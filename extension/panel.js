@@ -2,7 +2,7 @@
 'use strict';
 (() => {
   const params=new URLSearchParams(location.search);
-  const hostTabId=Number(params.get('pmTabId'));
+  let hostTabId=Number(params.get('pmTabId'))||null;
   const $=id=>document.getElementById(id);
   const entries=$('inventoryList'),filter=$('inventoryFilter');
   let last=null,busy=false;
@@ -55,12 +55,18 @@
     if(result.length>250){const more=document.createElement('p');more.className='empty';more.textContent='Showing 250 of '+result.length+' matching chats. Refine your search.';entries.append(more);}
   }
   async function refresh(){
-    if(!Number.isInteger(hostTabId)||hostTabId<=0||busy){
-      if(!Number.isInteger(hostTabId)||hostTabId<=0)say('Open the Project overview and reconnect PM.');
-      return;
-    }
+    if(busy)return;
     busy=true;
     try{
+      const context=await chrome.runtime.sendMessage({type:'PM_FIND_PROJECT',preferredTabId:hostTabId});
+      if(!context?.ok||!context.tabId){
+        hostTabId=null;
+        text('knownCount','–');text('openCount','–');
+        text('generatingCount','–');text('visitedCount','–');
+        say('Open a ChatGPT Project overview. PM will connect automatically.');
+        return;
+      }
+      hostTabId=context.tabId;
       const snapshot=await chrome.runtime.sendMessage({type:'PM_GET_OVERVIEW',tabId:hostTabId});
       if(!snapshot?.ok)throw Error(snapshot?.error||'Overview unavailable');
       last=snapshot;
@@ -82,8 +88,11 @@
   $('refreshOverview').addEventListener('click',()=>void refresh());
   $('scanProject').addEventListener('click',async()=>{
     if(busy)return;
-    $('scanProject').disabled=true;say('Scanning all project conversations; progress appears here…');
+    $('scanProject').disabled=true;say('Scanning project conversations…');
     try{
+      const context=await chrome.runtime.sendMessage({type:'PM_FIND_PROJECT',preferredTabId:hostTabId});
+      if(!context?.tabId)throw Error('Open a ChatGPT Project overview.');
+      hostTabId=context.tabId;
       const result=await chrome.runtime.sendMessage({type:'PM_INVENTORY_REFRESH',tabId:hostTabId});
       if(!result?.ok)throw Error(result?.error||'Scan unavailable');
       setTimeout(()=>void refresh(),500);
