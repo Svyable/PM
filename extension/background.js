@@ -1,11 +1,11 @@
-/* PM — Proceed Methodically 0.7 | Chrome MV3 coordinator
+/* PM — Proceed Methodically 0.9 | Chrome MV3 coordinator
  * Single bounded queue; never retries an uncertain send.
  */
 'use strict';
-const VERSION='0.7.0', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
+const VERSION='0.9.0', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
 const PROJECT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/project\/?(?:[?#].*)?$/;
 const CHAT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/c\/([a-zA-Z0-9-]+)\/?$/;
-const DEFAULTS={target:10,prompt:'proceed methodically',effort:'High',delaySeconds:4,loadTimeoutSeconds:180,keepTabs:true};
+const DEFAULTS={mode:'existing',newCount:1,target:10,prompt:'proceed methodically',effort:'High',delaySeconds:4,loadTimeoutSeconds:180,keepTabs:true};
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
 const CATALOG='pmCatalog', VISITS='pmVisits';
@@ -99,14 +99,31 @@ async function watchdog(){try{await chrome.alarms.create(ALARM,{periodInMinutes:
 async function clearWatchdog(){try{await chrome.alarms.clear(ALARM);}catch{}}
 function validate(raw){
   const target=Number(raw?.target),prompt=String(raw?.prompt||'').trim(),effort=String(raw?.effort||'High'),delaySeconds=Number(raw?.delaySeconds);
+  const mode=String(raw?.mode||'existing');
+  if(!['existing','new','mixed'].includes(mode))throw Error('Choose a valid thread strategy.');
+  const newCount=mode==='new'?target:mode==='existing'?0:Number(raw?.newCount);
+  if(mode==='mixed'&&(!Number.isInteger(newCount)||newCount<1||newCount>=target))throw Error('Mixed mode needs 1–'+(target-1)+' new threads and at least one existing thread.');
   if(!Number.isInteger(target)||target<1||target>1000)throw Error('Choose 1 to 1,000 conversations.');
   if(!prompt||prompt.length>16000)throw Error('The prompt must contain 1 to 16,000 characters.');
   if(!['Instant','Medium','High','Extra High','Keep current'].includes(effort))throw Error('Unsupported effort.');
   const loadTimeoutSeconds=Number(raw?.loadTimeoutSeconds??180);
   if(!Number.isFinite(loadTimeoutSeconds)||loadTimeoutSeconds<30||loadTimeoutSeconds>600)throw Error('Page readiness timeout must be 30–600 seconds.');
   if(!Number.isFinite(delaySeconds)||delaySeconds<2||delaySeconds>60)throw Error('Spacing must be between 2 and 60 seconds.');
-  return{target,prompt,effort,delaySeconds,loadTimeoutSeconds,keepTabs:raw.keepTabs!==false};
+  return{target,mode,newCount,prompt,effort,delaySeconds,loadTimeoutSeconds,keepTabs:raw.keepTabs!==false};
 }
+// New threads are created only by submitting in the Project overview composer.
+// Synthetic IDs are queue identities, never pretend to be real ChatGPT IDs.
+function appendNewThreads(job){
+  if(job.newItemsAdded)return;
+  const count=Number(job.config.newCount)||0;
+  const base='https://chatgpt.com/g/'+job.projectId+'/project';
+  for(let i=0;i<count;i++){
+    job.queue.push({kind:'new',id:'new:'+i,url:base,title:'New conversation #'+(i+1)});
+  }
+  job.newItemsAdded=true;
+  job.total=job.queue.length;
+}
+
 const attaching=new Map();
 const recentlyInjected=new Map();
 async function ping(tabId){try{const r=await chrome.tabs.sendMessage(tabId,{type:'PM_PING'});return r?.ok&&r.version===VERSION?r:null;}catch{return null;}}
@@ -145,16 +162,26 @@ async function begin(message,sender){
   const job={
     id:'pm-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),version:VERSION,status:'scanning',
     projectId:match[1],projectTabId:tab.id,target:cfg.target,config:cfg,
-    startedAt:Date.now(),found:0,total:0,index:0,completed:0,failed:0,scanComplete:false,scanStep:0,
+    startedAt:Date.now(),found:0,total:0,index:0,completed:0,failed:0,scanComplete:cfg.mode==='new',scanStep:0,
+    existingTarget:cfg.target-cfg.newCount,newItemsAdded:false,
     current:null,queue:[],results:[],error:null,pauseReason:null,consecutiveFailures:0,nextAt:0
   };
+  if(cfg.mode==='new'){
+    appendNewThreads(job);
+    job.status='running';
+  }
   await chrome.storage.local.set({[PREF]:cfg});await save(job);await watchdog();
-  try{
-    const ans=await chrome.tabs.sendMessage(tab.id,{type:'PM_SCAN',jobId:job.id,pid:job.projectId,target:cfg.target});
-    if(!ans?.accepted)throw Error(ans?.reason||'Could not start project scan.');
-  }catch(e){
-    job.status='error';job.error='Project scan unavailable: '+error(e);
-    await save(job);await clearWatchdog();throw Error(job.error);
+  if(cfg.mode==='new'){
+    // No project chat scan is needed to create new conversations.
+    setTimeout(()=>void launch(),0);
+  }else{
+    try{
+      const ans=await chrome.tabs.sendMessage(tab.id,{type:'PM_SCAN',jobId:job.id,pid:job.projectId,target:job.existingTarget});
+      if(!ans?.accepted)throw Error(ans?.reason||'Could not start project scan.');
+    }catch(e){
+      job.status='error';job.error='Project scan unavailable: '+error(e);
+      await save(job);await clearWatchdog();throw Error(job.error);
+    }
   }
   return{ok:true,jobId:job.id};
   });
@@ -181,8 +208,8 @@ async function launch(){
       setTimeout(()=>void launch(),Math.min(60000,job.nextAt-Date.now()+30));
       return;
     }
-    const item=job.queue[job.index],match=item?.url?.match(CHAT);
-    if(!match||match[1]!==job.projectId||match[2]!==item.id){
+    const item=job.queue[job.index],match=item?.url?.match(item?.kind==='new'?PROJECT:CHAT);
+    if(!match||match[1]!==job.projectId||(item.kind!=='new'&&match[2]!==item.id)){
       setTimeout(()=>void finish(null,{ok:false,error:'Invalid conversation link.',reasonCode:'invalid'},item),0);return;
     }
     let tab;
@@ -244,12 +271,18 @@ async function dispatch(tabId){
       }else{
         try{
           const adapterInfo=await adapter(tabId);
-          if(adapterInfo.chat?.projectId!==pid||adapterInfo.chat?.chatId!==cid){
-            lastReason='ChatGPT is still routing to the intended conversation';
+          const newChat=job.queue[job.index]?.kind==='new';
+          const correctContext=newChat
+            ?adapterInfo.projectId===pid&&!adapterInfo.chat
+            :adapterInfo.chat?.projectId===pid&&adapterInfo.chat?.chatId===cid;
+          if(!correctContext){
+            lastReason=newChat?'ChatGPT is not on this Project overview':'ChatGPT is still routing to the intended conversation';
           }else{
-            const r=await chrome.tabs.sendMessage(tabId,{type:'PM_READY',pid,cid});
+            const r=await chrome.tabs.sendMessage(tabId,newChat
+              ?{type:'PM_NEW_READY',pid}
+              :{type:'PM_READY',pid,cid});
             if(r?.ready===true)break;
-            lastReason='the conversation composer is not available yet';
+            lastReason=newChat?'the Project new-chat composer is not ready':'the conversation composer is not available yet';
           }
         }catch(e){lastReason='the ChatGPT content script is still loading ('+error(e)+')';}
       }
@@ -275,6 +308,7 @@ async function dispatch(tabId){
       delivered=true;
       const ack=await chrome.tabs.sendMessage(tabId,{
         type:'PM_APPLY',jobId,pid,cid,attemptToken:token,
+        kind:job.queue[job.index]?.kind==='new'?'new':'existing',
         prompt:job.config.prompt,effort:job.config.effort
       });
       if(ack?.accepted===false){delivered=false;throw Error(ack.reason||'Chat was not ready for the prompt.');}
@@ -322,12 +356,17 @@ async function finish(tabId,result,explicit=null){
       j.pauseReason='ChatGPT navigated to a different conversation before Send. Nothing was submitted. Resume to retry this queued thread.';
       await save(j);return;
     }
-    const row={id:item.id,title:item.title,url:item.url,ok:result.ok===true,
+    const row={id:result.ok&&result.createdChatId?result.createdChatId:item.id,
+      queueId:item.id,kind:item.kind==='new'?'new':'existing',title:item.title,
+      url:result.createdUrl||item.url,ok:result.ok===true,
       uncertain:result.uncertain===true&&!result.ok,reasonCode:result.reasonCode||'other',
       error:result.ok?null:error(result.error),at:Date.now(),
       readyWaitMs:j.current?.dispatchedAt?Math.max(0,j.current.dispatchedAt-j.current.startedAt):null,
       confirmationWaitMs:j.current?.dispatchedAt?Math.max(0,Date.now()-j.current.dispatchedAt):null};
     j.results.push(row);
+    if(row.ok&&row.kind==='new'){
+      void updateCatalog(j.projectId,[{id:row.id,url:row.url,title:row.title}],false);
+    }
     if(j.results.length>1000)j.results.shift();
     if(row.ok){j.completed++;j.consecutiveFailures=0;}
     else{
@@ -421,7 +460,7 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
     const seen=new Set(j.queue.map(x=>x.id));
     for(const row of (Array.isArray(m.chats)?m.chats:[])){
       const match=chatFromUrl(row.url);
-      if(!match||match.projectId!==j.projectId||seen.has(row.id)||j.queue.length>=j.target)continue;
+      if(!match||match.projectId!==j.projectId||seen.has(row.id)||j.queue.length>=j.existingTarget)continue;
       seen.add(row.id);
       j.queue.push({id:row.id,url:row.url,title:String(row.title||'Untitled chat').slice(0,180)});
     }
@@ -442,12 +481,14 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
       const seen=new Set(j.queue.map(x=>x.id));
       for(const row of (Array.isArray(m.chats)?m.chats:[])){
         const match=chatFromUrl(row.url);
-        if(!match||match.projectId!==j.projectId||seen.has(row.id)||j.queue.length>=j.target)continue;
+        if(!match||match.projectId!==j.projectId||seen.has(row.id)||j.queue.length>=j.existingTarget)continue;
         seen.add(row.id);j.queue.push({id:row.id,url:row.url,title:String(row.title||'Untitled chat').slice(0,180)});
       }
       j.scanComplete=true;
     }
-    j.found=Math.max(j.found,Number(m.found)||0,j.queue.length);
+    // Mixed mode launches the requested new threads AFTER existing discovery.
+    if(j.scanComplete&&j.config.newCount)appendNewThreads(j);
+    j.found=Math.max(j.found,Number(m.found)||0,j.queue.filter(item=>item.kind!=='new').length);
     j.total=j.queue.length;
     if(!j.total&&j.status!=='paused'){j.status='error';j.error=j.error||'No conversations were discovered in this project.';}
     else if(j.status==='scanning')j.status='running';
@@ -468,7 +509,17 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
   if(m.type==='PM_RESULT')return reply((async()=>{
     const j=await load();
     if(j?.id!==m.jobId||j.current?.tabId!==s.tab?.id||j.current.chatId!==m.chatId||j.current.attemptToken!==m.attemptToken||j.current.phase!=='sending')return{ok:false};
-    await finish(s.tab.id,{ok:m.ok===true,uncertain:m.uncertain===true,reasonCode:m.reasonCode,error:m.error});
+    const item=j.queue[j.index];
+    let verified=m.ok===true,uncertain=m.uncertain===true,reasonCode=m.reasonCode,errorText=m.error;
+    if(item?.kind==='new'&&verified){
+      const parsed=chatFromUrl(m.createdUrl),actual=m.createdChatId;
+      if(!parsed||parsed.projectId!==j.projectId||parsed.chatId!==actual){
+        verified=false;uncertain=true;reasonCode='new-chat-unverified';
+        errorText='The new conversation URL could not be verified inside this project.';
+      }
+    }
+    await finish(s.tab.id,{ok:verified,uncertain,reasonCode,error:errorText,
+      createdChatId:m.createdChatId,createdUrl:m.createdUrl});
     return{ok:true};
   })());
 });

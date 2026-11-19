@@ -8,8 +8,9 @@ const code=fs.readFileSync(path.join(__dirname,'..','extension','content.js'),'u
 const project='g-p-demo123';
 function environment(mode){
   let handler,clicks=0,messages=[];
+  const location={pathname:(mode==='project'||mode.startsWith('new'))?'/g/'+project+'/project':'/g/'+project+'/c/chat-1',href:'https://chatgpt.com/',origin:'https://chatgpt.com'};
   const box={
-    isConnected:true,getClientRects:()=>[{}],innerText:mode==='draft'?'existing unsent draft':'',
+    isConnected:true,getClientRects:()=>[{}],innerText:(mode==='draft'||mode==='newdraft')?'existing unsent draft':'',
     textContent:mode==='draft'?'existing unsent draft':'',
     focus(){},closest(){return form;}
   };
@@ -24,7 +25,13 @@ function environment(mode){
     getAttribute(k){return k==='aria-label'?'Send prompt':k==='data-testid'?'send-button':null;},
     click(){
       clicks++;box.innerText='';box.textContent='';
-      if(mode==='chat'||mode==='wrongturn')messageNodes.push({isConnected:true,getClientRects:()=>[{}],innerText:mode==='chat'?'proceed methodically':'a different message',querySelector(){return null;}});
+      if(['chat','wrongturn','newchat','newother','newnochat'].includes(mode)){
+        messageNodes.push({isConnected:true,getClientRects:()=>[{}],
+          innerText:mode==='wrongturn'?'a different message':'proceed methodically',
+          querySelector(){return null;}});
+      }
+      if(mode==='newchat')location.pathname='/g/'+project+'/c/generated-1';
+      if(mode==='newother')location.pathname='/g/g-p-other/c/generated-1';
     }
   };
   const anchors=['First draft','Second thread'].map((name,i)=>({
@@ -58,7 +65,7 @@ function environment(mode){
       async sendMessage(msg){messages.push(msg);return{ok:true};}
     }
   };
-  const context={chrome,document:doc,location:{pathname:mode==='project'?'/g/'+project+'/project':'/g/'+project+'/c/chat-1',href:'https://chatgpt.com/'},URL,getComputedStyle(){return{overflowY:'auto',visibility:'visible'};},setTimeout:(fn,ms)=>setTimeout(fn,Math.min(ms,5)),clearTimeout,InputEvent:class InputEvent{constructor(){}},KeyboardEvent:class KeyboardEvent{constructor(){}},console,globalThis:{}};
+  const context={chrome,document:doc,location,URL,getComputedStyle(){return{overflowY:'auto',visibility:'visible'};},setTimeout:(fn,ms)=>setTimeout(fn,Math.min(ms,5)),clearTimeout,InputEvent:class InputEvent{constructor(){}},KeyboardEvent:class KeyboardEvent{constructor(){}},console,globalThis:{}};
   vm.runInNewContext(code,context,{filename:'content.js'});
   function receive(m){let response;handler(m,{},v=>response=v);return response;}
   return{receive,messages,get clicks(){return clicks;}};
@@ -70,7 +77,7 @@ async function until(check,label,ms=2500){
 }
 (async()=>{
   const scan=environment('project');
-  assert.equal(scan.receive({type:'PM_PING'}).version,'0.7.0');
+  assert.equal(scan.receive({type:'PM_PING'}).version,'0.9.0');
   assert.equal(scan.receive({type:'PM_SCAN',jobId:'scan1',pid:project,target:2}).accepted,true);
   await until(()=>scan.messages.some(m=>m.type==='PM_SCANNED'),'scan result');
   const found=scan.messages.find(m=>m.type==='PM_SCANNED');
@@ -100,13 +107,21 @@ async function until(check,label,ms=2500){
     const failed=environment(mode);
     const cid=mode==='chat'?'chat-2':'chat-1';
     const token='failure-'+mode;
-    assert.equal(failed.receive({type:'PM_APPLY',jobId:'early-'+mode,pid:project,cid,
-      attemptToken:token,prompt:'proceed methodically',effort:'High'}).accepted,true);
+    const response=failed.receive({type:'PM_APPLY',jobId:'early-'+mode,pid:project,cid,
+      attemptToken:token,prompt:'proceed methodically',effort:'High'});
+    if(mode==='chat'){
+      // A mismatched chat is rejected BEFORE applying, without even
+      // acknowledging a potentially sent prompt.
+      assert.equal(response.accepted,false);
+      assert.equal(failed.clicks,0);
+      continue;
+    }
+    assert.equal(response.accepted,true);
     await until(()=>failed.messages.some(m=>m.type==='PM_RESULT'),mode+' failure result');
     const result=failed.messages.find(m=>m.type==='PM_RESULT');
     assert.equal(result.attemptToken,token,mode+' error must retain dispatch token');
     assert.equal(result.ok,false);
-    assert.equal(result.reasonCode,mode==='chat'?'wrong-chat':'effort');
+    assert.equal(result.reasonCode,'effort');
     assert.equal(failed.clicks,0,mode+' error must not send');
   }
 
@@ -118,6 +133,36 @@ async function until(check,label,ms=2500){
   assert.equal(send.messages.find(m=>m.type==='PM_RESULT').ok,true);
   assert.equal(send.messages.find(m=>m.type==='PM_RESULT').attemptToken,'attempt-3');
   assert.equal(send.clicks,1);
+
+  const newChat=environment('newchat');
+  assert.equal(newChat.receive({type:'PM_NEW_READY',pid:project}).ready,true);
+  assert.equal(newChat.receive({type:'PM_NEW_READY',pid:'g-p-other'}).ready,false);
+  assert.equal(newChat.receive({type:'PM_APPLY',jobId:'create-1',pid:project,cid:'new:0',kind:'new',attemptToken:'new-tok-1',prompt:'proceed methodically',effort:'High'}).accepted,true);
+  await until(()=>newChat.messages.some(m=>m.type==='PM_RESULT'),'new project chat result');
+  const created=newChat.messages.find(m=>m.type==='PM_RESULT');
+  assert.equal(created.ok,true);
+  assert.equal(created.chatId,'new:0');
+  assert.equal(created.createdChatId,'generated-1');
+  assert.equal(created.createdUrl,'https://chatgpt.com/g/'+project+'/c/generated-1');
+  assert.equal(created.attemptToken,'new-tok-1');
+  assert.equal(newChat.clicks,1,'new chat should submit exactly once');
+
+  const draftNew=environment('newdraft');
+  draftNew.receive({type:'PM_APPLY',jobId:'draft-new',pid:project,cid:'new:0',kind:'new',attemptToken:'new-draft',prompt:'proceed methodically',effort:'High'});
+  await until(()=>draftNew.messages.some(m=>m.type==='PM_RESULT'),'new chat draft preserved');
+  assert.equal(draftNew.messages.find(m=>m.type==='PM_RESULT').reasonCode,'draft');
+  assert.equal(draftNew.clicks,0,'must never overwrite a Project overview draft');
+
+  for(const mode of ['newother','newnochat']){
+    const environmentCase=environment(mode);
+    environmentCase.receive({type:'PM_APPLY',jobId:'new-bad-'+mode,pid:project,cid:'new:0',kind:'new',attemptToken:'token-'+mode,prompt:'proceed methodically',effort:'High'});
+    await until(()=>environmentCase.messages.some(m=>m.type==='PM_RESULT'),mode+' unconfirmed');
+    const response=environmentCase.messages.find(m=>m.type==='PM_RESULT');
+    assert.equal(response.ok,false);
+    assert.equal(response.uncertain,true);
+    assert.equal(response.attemptToken,'token-'+mode);
+    assert.equal(environmentCase.clicks,1,'new chat must not retry an uncertain Send');
+  }
 
   for(const mode of ['cleared','wrongturn','existingmatch']){
     const unsafe=environment(mode);

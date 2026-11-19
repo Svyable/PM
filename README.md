@@ -2,7 +2,7 @@
 
 **One prompt. Many conversations.** PM is a local-first Chrome extension that initiates a user-selected prompt across existing conversations in a ChatGPT Project.
 
-[**Download PM v0.8.0 (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.8.0.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
+[**Download PM v0.9.0 (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.9.0.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
 
 ## Install
 
@@ -27,6 +27,18 @@ The dashboard includes a live dispatch timeline with explicit **scanning / page 
 - **Conversation inventory:** names, visible snippets and updated labels when the project DOM exposes them, linked to open the individual chat, with PM visit and open-tab annotations.
 
 All activity and inventory information stays in Chrome local storage. PM does not scrape private API endpoints, read hidden app state, or claim to know if closed threads are generating.
+
+## Continue existing threads or start new ones (v0.9)
+
+PM now has three clearly defined dispatch strategies:
+
+- **Continue existing** (default): discover existing conversations in the Project and submit the instruction to each selected thread, preserving its history.
+- **Start new Project threads:** open a fresh Project overview per queued item and submit the instruction as the first message. PM verifies that ChatGPT created a conversation **inside the same Project** and that a matching new user message appeared.
+- **Mixed:** choose the total conversation count and how many of those should be new. PM continues the requested existing conversations first, then creates the selected number of new conversations.
+
+Creating a new conversation requires sending a prompt. PM does not claim to create empty conversations or automatically coordinate responses across threads. If there are fewer existing chats than requested in mixed mode, PM processes those found plus the explicitly requested new chats; it does **not** silently substitute extra new conversations.
+
+A new chat with an uncertain send is recorded for inspection and is not retried automatically. Test one new conversation first to confirm that the current ChatGPT UI routes it to the selected Project.
 
 ## Use PM
 
@@ -53,7 +65,7 @@ PM **streams the first discovered chat batch into the dispatch queue immediately
 
 ## Preparing for PM v1
 
-**0.8.0 is a hardening build, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
+**0.9.0 is a feature candidate, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
 
 - [v1 go/no-go and live-browser test checklist](docs/V1_LAUNCH_CHECKLIST.md)
 - [Authenticated browser QA runbook](docs/QA_RUNBOOK.md)

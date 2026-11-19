@@ -29,10 +29,10 @@ function setup(options={}){
       async create(opts){
         const id=++nextTabId;
         const expected=opts.url.split('/').at(-1);
-        const isFirst=expected==='chat-one';
+        const isFirst=expected==='chat-one',creating=expected==='project';
         const delayed=(options.slowFirst||options.permanentMismatch)&&isFirst;
         const tab={id,url:delayed?'https://chatgpt.com/':opts.url,status:delayed?'loading':'complete',
-          route:delayed?null:expected,ready:!delayed};
+          route:delayed||creating?null:expected,ready:!delayed};
         tabs.set(id,tab);opened.push({id,url:opts.url});
         if(delayed){
           setTimeout(()=>{
@@ -51,13 +51,16 @@ function setup(options={}){
         if(!injected.has(id))throw Error('Receiving end does not exist');
         const tab=tabs.get(id);if(!tab)throw Error('Tab not found');
         if(msg.type==='PM_PING'){
-          if(id===1)return{ok:true,version:'0.7.0',projectId:project,chat:null};
-          return{ok:true,version:'0.7.0',projectId:null,chat:{projectId:project,chatId:tab.route}};
+          if(id===1||tab.url===projectURL)return{ok:true,version:'0.9.0',projectId:project,chat:null};
+          return{ok:true,version:'0.9.0',projectId:null,chat:{projectId:project,chatId:tab.route}};
         }
         if(msg.type==='PM_CONTEXT')return{ok:true,projectId:project,count:2,chats,projectTitle:'/demo'};
         if(msg.type==='PM_READY'){
           return{ok:true,ready:tab.ready&&tab.route===msg.cid,
             chat:{projectId:project,chatId:tab.route}};
+        }
+        if(msg.type==='PM_NEW_READY'){
+          return{ok:true,ready:tab.ready&&tab.url===projectURL&&msg.pid===project,projectId:project};
         }
         if(msg.type==='PM_SCAN'){
           if(options.streaming){
@@ -75,15 +78,25 @@ function setup(options={}){
         }
         if(msg.type==='PM_STATUS')return{ok:true,generating:false};
         if(msg.type==='PM_APPLY'){
-          if(!tab.ready||tab.route!==msg.cid)throw Error('Wrong chat was targeted');
-          attempts.push({tabId:id,chatId:msg.cid,prompt:msg.prompt,token:msg.attemptToken});
-          const uncertain=(options.uncertainFirst&&msg.cid==='chat-one')||(options.uncertainSecond&&msg.cid==='chat-two');
+          const creating=msg.kind==='new';
+          if(!tab.ready||(creating?tab.url!==projectURL:tab.route!==msg.cid))throw Error('Wrong chat was targeted');
+          attempts.push({tabId:id,chatId:msg.cid,kind:msg.kind||'existing',prompt:msg.prompt,token:msg.attemptToken});
+          const uncertain=(options.uncertainFirst&&msg.cid==='chat-one')||
+            (options.uncertainSecond&&msg.cid==='chat-two')||
+            (options.uncertainNew&&creating&&msg.cid==='new:0');
           const skipped=options.draftFirst&&msg.cid==='chat-one';
+          const created=creating?'generated-'+id:null;
+          if(creating){
+            tab.route=created;
+            tab.url='https://chatgpt.com/g/'+project+'/c/'+created;
+            setTimeout(()=>onUpdated?.(id,{url:tab.url}),0);
+          }
           setTimeout(()=>void request('PM_RESULT',{
             jobId:msg.jobId,chatId:msg.cid,attemptToken:msg.attemptToken,
             ok:!uncertain&&!skipped,uncertain,
             reasonCode:uncertain?'unconfirmed':skipped?'draft':'sent',
-            error:uncertain?'No matching rendered user message':skipped?'Existing draft preserved':null
+            error:uncertain?'No matching rendered user message':skipped?'Existing draft preserved':null,
+            ...(creating?{createdChatId:created,createdUrl:tab.url}:{})
           },id),20);
           return{accepted:true};
         }
@@ -132,6 +145,39 @@ function setup(options={}){
   assert.equal((await uncertain.request('PM_RESUME')).ok,true);
   await waitFor(()=>uncertain.storage.pmJob?.status==='done','uncertain run resume');
   assert.deepEqual(uncertain.attempts.map(a=>a.chatId),['chat-one','chat-two']);
+
+  // New-only mode starts fresh conversations from the project composer:
+  // no inventory scan, each send returns a NEW project chat URL and ID.
+  const fresh=setup();
+  await fresh.request('PM_START',{tabId:1,config:{...fresh.prefs,target:3,mode:'new',newCount:3}});
+  await waitFor(()=>fresh.storage.pmJob?.status==='done','three newly created chats',12000);
+  assert.equal(fresh.storage.pmJob.found,0,'new-only mode does not scan existing chats');
+  assert.equal(fresh.storage.pmJob.completed,3);
+  assert.equal(fresh.opened.length,3);
+  assert.ok(fresh.opened.every(row=>row.url===projectURL));
+  assert.ok(fresh.attempts.every(a=>a.kind==='new'));
+  assert.equal(new Set(fresh.storage.pmJob.results.map(r=>r.id)).size,3);
+  assert.ok(fresh.storage.pmJob.results.every(r=>r.kind==='new'&&r.url.includes('/g/'+project+'/c/generated-')));
+
+  // Mixed mode continues the existing two chats then starts one new thread.
+  const mixed=setup();
+  await mixed.request('PM_START',{tabId:1,config:{...mixed.prefs,target:3,mode:'mixed',newCount:1}});
+  await waitFor(()=>mixed.storage.pmJob?.status==='done','mixed existing/new queue',12000);
+  assert.deepEqual(mixed.attempts.map(a=>a.kind),['existing','existing','new']);
+  assert.equal(mixed.storage.pmJob.completed,3);
+  assert.equal(mixed.storage.pmJob.results[2].kind,'new');
+
+  // A new conversation may have been created even when confirmation fails:
+  // never click Send again for that same synthetic queue item.
+  const uncertainNew=setup({uncertainNew:true});
+  await uncertainNew.request('PM_START',{tabId:1,config:{...uncertainNew.prefs,target:2,mode:'new',newCount:2}});
+  await waitFor(()=>uncertainNew.storage.pmJob?.status==='paused','new chat uncertain pause',7000);
+  assert.equal(uncertainNew.storage.pmJob.index,1);
+  assert.equal(uncertainNew.attempts.length,1);
+  assert.equal((await uncertainNew.request('PM_RESUME')).ok,true);
+  await waitFor(()=>uncertainNew.storage.pmJob?.status==='done','resume remaining new chat',8000);
+  assert.deepEqual(uncertainNew.attempts.map(a=>a.chatId),['new:0','new:1']);
+  assert.equal(uncertainNew.storage.pmJob.failed,1);
 
   // Critical v1 gate: a final unconfirmed send must NOT display a green
   // completed run, even when all queued conversations have been attempted.

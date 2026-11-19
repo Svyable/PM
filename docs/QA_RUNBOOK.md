@@ -76,3 +76,12 @@ Do NOT post raw ChatGPT transcripts, auth tokens, cookies or unredacted run logs
 - [ ] Owner approves public v1 tag and distribution
 
 Link this signed-off runbook to the v1 GO/NO-GO tracking issue. Keep the issue open until all non-CI gates pass.
+
+## Smoke test F: Create Project conversations (v0.9)
+
+- [ ] Start new with target 1, effort High, unique non-sensitive prompt. Verify ChatGPT creates a new conversation IN THE SELECTED PROJECT; confirm exact first user message appears once.
+- [ ] Start new with target 2, verify two distinct chat IDs and exactly one first-message submission per chat.
+- [ ] Mixed with target 3 and new count 1: verify PM first continues two existing threads, then creates one new Project conversation.
+- [ ] Existing draft in the new-chat Project composer must never be overwritten.
+- [ ] If a new-chat submission is unconfirmed, inspect the created/attempted chat before any follow-up. PM must not automatically retry it.
+- [ ] Confirm the new-chat mode does not require a full existing-chat inventory scan.

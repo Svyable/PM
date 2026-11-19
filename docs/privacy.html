@@ -27,7 +27,7 @@
 <p>PM checks for a newly rendered user message matching your chosen prompt to verify a send. It is <strong>not designed to retrieve, export, or store full assistant responses</strong>. PM does not ask for account passwords or read browser cookies.</p>
 <h2>Where information goes</h2>
 <p>PM uses <strong>Chrome local extension storage</strong> for preferences, the current/latest job, discovered project metadata, and visit timestamps. The extension has no PM-operated analytics server, database, third-party tracker, or remote code loader. There is no automatic sale or upload of this locally stored information to PM's maintainers.</p>
-<p>When you explicitly launch a dispatch, the prompt is submitted <strong>to ChatGPT</strong> through the interface on the selected conversation pages, just as if you had typed and sent it. ChatGPT processes that submission under its own policies. PM cannot control data handling by ChatGPT, Chrome, GitHub, or their underlying infrastructure.</p>
+<p>When you explicitly launch a dispatch, the prompt is submitted <strong>to ChatGPT</strong> through the interface on the selected conversation pages, just as if you had typed and sent it. In new-thread mode, PM opens the Project's new-chat composer and submits that prompt as the first message of a freshly created conversation; it stores the resulting URL and ID locally when verified. ChatGPT processes that submission under its own policies. PM cannot control data handling by ChatGPT, Chrome, GitHub, or their underlying infrastructure.</p>
 <h2>Permissions and purpose</h2>
 <ul>
 <li><strong>chatgpt.com host access:</strong> read visible Project conversation links and interact with the chat composer only when a dispatch is triggered.</li>
