@@ -107,13 +107,21 @@ async function until(check,label,ms=2500){
     const failed=environment(mode);
     const cid=mode==='chat'?'chat-2':'chat-1';
     const token='failure-'+mode;
-    assert.equal(failed.receive({type:'PM_APPLY',jobId:'early-'+mode,pid:project,cid,
-      attemptToken:token,prompt:'proceed methodically',effort:'High'}).accepted,true);
+    const response=failed.receive({type:'PM_APPLY',jobId:'early-'+mode,pid:project,cid,
+      attemptToken:token,prompt:'proceed methodically',effort:'High'});
+    if(mode==='chat'){
+      // A mismatched chat is rejected BEFORE applying, without even
+      // acknowledging a potentially sent prompt.
+      assert.equal(response.accepted,false);
+      assert.equal(failed.clicks,0);
+      continue;
+    }
+    assert.equal(response.accepted,true);
     await until(()=>failed.messages.some(m=>m.type==='PM_RESULT'),mode+' failure result');
     const result=failed.messages.find(m=>m.type==='PM_RESULT');
     assert.equal(result.attemptToken,token,mode+' error must retain dispatch token');
     assert.equal(result.ok,false);
-    assert.equal(result.reasonCode,mode==='chat'?'wrong-chat':'effort');
+    assert.equal(result.reasonCode,'effort');
     assert.equal(failed.clicks,0,mode+' error must not send');
   }
 
