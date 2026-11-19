@@ -5,6 +5,8 @@ on:
     paths:
       - 'extension/**'
       - 'tests/**'
+      - 'scripts/**'
+      - 'docs/downloads/**'
       - '.github/workflows/check.yml'
   pull_request:
   workflow_dispatch:
@@ -22,6 +24,7 @@ jobs:
           node --check extension/popup.js
           node --check extension/project-panel.js
           node --check extension/panel.js
+          node --check scripts/package.mjs
           node --check tests/adapter.mock.cjs
           node --check tests/coordinator.mock.cjs
           node --check tests/panel.mock.cjs
@@ -34,11 +37,18 @@ jobs:
         run: node tests/coordinator.mock.cjs
       - name: Embedded project panel routing
         run: node tests/panel.mock.cjs
-      - name: Verify standalone extension ZIP
+      - name: Check v1 launch disclosure files
         run: |
-          unzip -t docs/downloads/PM-Chrome-Extension-v0.7.0.zip
+          test -f docs/privacy.html
+          test -f docs/V1_LAUNCH_CHECKLIST.md
+          test -f docs/STORE_LISTING_DRAFT.md
+          grep -q 'privacy.html' docs/index.html
+          grep -q 'PM-Chrome-Extension-v0.8.0.zip' docs/index.html
+      - name: Verify reproducible installer and every extension file
+        run: |
+          node scripts/package.mjs --verify
+          unzip -t docs/downloads/PM-Chrome-Extension-v0.8.0.zip
           mkdir -p "$RUNNER_TEMP/pm-check"
-          unzip -q docs/downloads/PM-Chrome-Extension-v0.7.0.zip -d "$RUNNER_TEMP/pm-check"
-          for file in manifest.json background.js content.js popup.html popup.css popup.js; do
-            cmp "extension/$file" "$RUNNER_TEMP/pm-check/extension/$file"
-          done
+          unzip -q docs/downloads/PM-Chrome-Extension-v0.8.0.zip -d "$RUNNER_TEMP/pm-check"
+          diff -qr extension "$RUNNER_TEMP/pm-check/extension"
+          sha256sum docs/downloads/PM-Chrome-Extension-v0.8.0.zip
