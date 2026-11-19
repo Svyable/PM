@@ -368,10 +368,33 @@ async function finish(tabId,result,explicit=null){
       await save(j);return;
     }
     if(result.reasonCode==='wrong-chat'&&!result.uncertain){
-      // The content script rejected a late route change before Send.
-      // Never advance the cursor or accidentally send to the next chat.
-      j.status='paused';j.current.phase='waiting';j.current.waitError=error(result.error);
-      j.pauseReason='ChatGPT navigated to a different conversation before Send. Nothing was submitted. Resume to retry this queued thread.';
+      // The adapter guarantees Send was NOT clicked. A transient SPA route
+      // change can therefore be corrected safely without advancing the queue.
+      // Keep the same tab/chat and rotate the token to reject stale responses.
+      const repairs=j.current?.routeRepairs||0;
+      if(j.status==='running'&&tabId!==null&&repairs<2&&item.url){
+        j.current.routeRepairs=repairs+1;
+        j.current.phase='waiting';
+        j.current.startedAt=Date.now();
+        j.current.dispatchedAt=null;
+        j.current.attemptToken=j.id+':'+j.index+':'+tabId+':route-'+(repairs+1);
+        j.current.waitError='Repairing a pre-send ChatGPT route change (attempt '+(repairs+1)+'/2).';
+        await save(j);
+        // Run after the queue lock is released. Chrome onUpdated may also
+        // call dispatch, guarded by per-tab ownership.
+        setTimeout(()=>void(async()=>{
+          try{
+            await chrome.tabs.update(tabId,{url:item.url,active:false});
+            void dispatch(tabId);
+          }catch(e){
+            await pauseReadiness(tabId,j.current.attemptToken,item.id,'Could not restore the queued conversation: '+error(e));
+          }
+        })(),0);
+        return;
+      }
+      j.status='paused';j.current.phase='waiting';
+      j.current.waitError=error(result.error);
+      j.pauseReason='ChatGPT changed conversations before Send. Nothing was submitted. PM attempted route recovery; inspect this tab and Resume or Stop.';
       await save(j);return;
     }
     const row={id:result.ok&&result.createdChatId?result.createdChatId:item.id,
@@ -380,7 +403,8 @@ async function finish(tabId,result,explicit=null){
       uncertain:result.uncertain===true&&!result.ok,reasonCode:result.reasonCode||'other',
       error:result.ok?null:error(result.error),at:Date.now(),
       readyWaitMs:j.current?.dispatchedAt?Math.max(0,j.current.dispatchedAt-j.current.startedAt):null,
-      confirmationWaitMs:j.current?.dispatchedAt?Math.max(0,Date.now()-j.current.dispatchedAt):null};
+      confirmationWaitMs:j.current?.dispatchedAt?Math.max(0,Date.now()-j.current.dispatchedAt):null,
+      routeRepairs:j.current?.routeRepairs||0};
     j.results.push(row);
     if(row.ok&&row.kind==='new'){
       void updateCatalog(j.projectId,[{id:row.id,url:row.url,title:row.title}],false);
