@@ -1,4 +1,4 @@
-PM 0.10.0 — Proceed Methodically (v1 feature candidate)
+PM 0.10.1 — Proceed Methodically (v1 feature candidate)
 
 Install:
 1. Extract the ZIP.
@@ -28,3 +28,5 @@ Full Command Center:
 - Reconnect is automatic. Keep a Project overview open; select the intended Project before Launch.
 - Stop any active old-version run before updating the extension.
 - If ChatGPT redirects before Send, PM will try restoring the original queue tab without double-sending.
+
+The Project launcher opens the window-wide Chrome side panel; switch tabs freely while monitoring PM.
