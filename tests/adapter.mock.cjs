@@ -29,7 +29,7 @@ function environment(mode){
   const wrongNav={isConnected:true,getClientRects:()=>[{}],textContent:'Reasoning options',
     getAttribute(){return null;},click(){wrongClicks++;}};
   const highOption={
-    isConnected:true,getClientRects:()=>[{}],innerText:'High\\nMore reasoning time',textContent:'High\\nMore reasoning time',
+    isConnected:true,getClientRects:()=>[{}],innerText:'High\nMore reasoning time',textContent:'High\nMore reasoning time',
     getAttribute(){return null;},querySelector(){return null;},
     click(){currentEffort='high';effort.textContent='High';menuOpen=false;}
   };
