@@ -20,10 +20,11 @@ async function waitFor(check,label,timeout=12000){
 function setup(options={}){
   const storage={},tabs=new Map(),injected=new Set(),attempts=[],opened=[];
   tabs.set(1,{id:1,url:projectURL,status:'complete',route:null,ready:true});
-  let listener,onUpdated,onRemoved,nextTabId=1,injections=0;
+  let listener,onUpdated,onRemoved,onActivated,nextTabId=1,injections=0;
   const chrome={
     runtime:{onMessage:{addListener(fn){listener=fn;}},onStartup:{addListener(){}},onInstalled:{addListener(){}}},
     tabs:{
+      async query(){return [...tabs.values()];},
       async get(id){if(!tabs.has(id))throw Error('Tab not found');return tabs.get(id);},
       async create(opts){
         const id=++nextTabId;
@@ -50,18 +51,29 @@ function setup(options={}){
         if(!injected.has(id))throw Error('Receiving end does not exist');
         const tab=tabs.get(id);if(!tab)throw Error('Tab not found');
         if(msg.type==='PM_PING'){
-          if(id===1)return{ok:true,version:'0.6.0',projectId:project,chat:null};
-          return{ok:true,version:'0.6.0',projectId:null,chat:{projectId:project,chatId:tab.route}};
+          if(id===1)return{ok:true,version:'0.7.0',projectId:project,chat:null};
+          return{ok:true,version:'0.7.0',projectId:null,chat:{projectId:project,chatId:tab.route}};
         }
-        if(msg.type==='PM_CONTEXT')return{ok:true,projectId:project,count:2};
+        if(msg.type==='PM_CONTEXT')return{ok:true,projectId:project,count:2,chats,projectTitle:'/demo'};
         if(msg.type==='PM_READY'){
           return{ok:true,ready:tab.ready&&tab.route===msg.cid,
             chat:{projectId:project,chatId:tab.route}};
         }
         if(msg.type==='PM_SCAN'){
-          setTimeout(()=>void request('PM_SCANNED',{jobId:msg.jobId,found:2,chats},1),15);
+          if(options.streaming){
+            setTimeout(()=>void request('PM_SCAN_PROGRESS',{jobId:msg.jobId,found:1,step:0,chats:[chats[0]]},1),10);
+            setTimeout(()=>void request('PM_SCANNED',{jobId:msg.jobId,found:2,chats},1),1300);
+          }else{
+            setTimeout(()=>void request('PM_SCAN_PROGRESS',{jobId:msg.jobId,found:2,step:0,chats},1),10);
+            setTimeout(()=>void request('PM_SCANNED',{jobId:msg.jobId,found:2,chats},1),15);
+          }
           return{accepted:true};
         }
+        if(msg.type==='PM_INVENTORY_SCAN'){
+          setTimeout(()=>void request('PM_INVENTORY_DONE',{pid:project,chats,step:1},1),10);
+          return{accepted:true};
+        }
+        if(msg.type==='PM_STATUS')return{ok:true,generating:false};
         if(msg.type==='PM_APPLY'){
           if(!tab.ready||tab.route!==msg.cid)throw Error('Wrong chat was targeted');
           attempts.push({tabId:id,chatId:msg.cid,prompt:msg.prompt,token:msg.attemptToken});
@@ -76,7 +88,8 @@ function setup(options={}){
         return{ok:true};
       },
       onUpdated:{addListener(fn){onUpdated=fn;}},
-      onRemoved:{addListener(fn){onRemoved=fn;}}
+      onRemoved:{addListener(fn){onRemoved=fn;}},
+      onActivated:{addListener(fn){onActivated=fn;}}
     },
     storage:{local:{
       async get(k){return Object.fromEntries((Array.isArray(k)?k:[k]).map(key=>[key,storage[key]]));},
@@ -97,7 +110,7 @@ function setup(options={}){
   }
   const prefs={target:2,prompt:'proceed methodically',effort:'High',
     delaySeconds:2,loadTimeoutSeconds:180,keepTabs:true};
-  return{request,prefs,storage,attempts,opened,tabs,get injections(){return injections;}};
+  return{request,prefs,storage,attempts,opened,tabs,activate(tabId){onActivated?.({tabId});},get injections(){return injections;}};
 }
 (async()=>{
   const normal=setup();
@@ -145,5 +158,26 @@ function setup(options={}){
   assert.equal(redirect.attempts[0].tabId,firstId,'must reuse original tab, not open new first tab');
   await waitFor(()=>redirect.storage.pmJob?.status==='done','resumed first then second');
   assert.deepEqual(redirect.attempts.map(a=>a.chatId),['chat-one','chat-two']);
-  console.log('PM v0.6 coordinator tests passed: delayed first tab, stale ID, timeout pause, same-tab retry, queue isolation, circuit breaker.');
+  // User-reported hang: scan discovers its first chat early, but the full
+  // project scan is still running. The first tab must launch immediately.
+  const streaming=setup({streaming:true});
+  await streaming.request('PM_START',{tabId:1,config:streaming.prefs});
+  await waitFor(()=>streaming.attempts.length>=1,'first dispatch before scan complete',1200);
+  assert.equal(streaming.storage.pmJob.scanComplete,false,'full scan still pending');
+  assert.equal(streaming.attempts[0].chatId,'chat-one');
+  await waitFor(()=>streaming.storage.pmJob?.status==='done','streaming two-chat queue',9000);
+  assert.deepEqual(streaming.attempts.map(a=>a.chatId),['chat-one','chat-two']);
+  const host=await streaming.request('PM_HOST_CONTEXT',{},1);
+  assert.equal(host.tabId,1);
+  const stats=await streaming.request('PM_GET_OVERVIEW',{tabId:1});
+  assert.equal(stats.ok,true);
+  assert.equal(stats.known,2);
+  assert.equal(stats.openTabs,2);
+  assert.equal(stats.generatingObserved,0);
+  assert.ok(Array.isArray(stats.chats)&&stats.chats.length===2);
+  streaming.activate(streaming.opened[0].id);
+  await waitFor(()=>!!streaming.storage.pmVisits?.[project]?.['chat-one'],'PM-tracked visit',1000);
+  const visited=await streaming.request('PM_GET_OVERVIEW',{tabId:1});
+  assert.equal(visited.trackedSeen,1);
+  console.log('PM v0.7 coordinator passed: streaming first dispatch, tab route safety, status inventory, visits, safe resume.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

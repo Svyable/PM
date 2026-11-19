@@ -1,0 +1,31 @@
+/* PM v0.7 — embedded project command center */
+:root{--pm-border:#323b54}
+html{width:100%;max-width:100%;height:100%;overflow:hidden}
+body{width:100%;height:100%;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-color:#566183 transparent;scrollbar-width:thin}
+.top{padding:16px 15px 14px;gap:9px;position:sticky;top:0;z-index:10;background:#0a0d18eF;backdrop-filter:blur(15px)}
+.logo{height:39px;width:39px;flex-shrink:0}.logo strong{font-size:20px}.brand strong{font-size:12px}.brand em{color:#cbd5f1}.brand small{font-size:9px}.version{font-size:9px;padding:3px 5px}
+main{padding:14px 14px 16px}.connection{padding:9px 10px;margin-bottom:13px;gap:6px}.connection span:nth-child(2){font-size:10px}.connection button{font-size:9px;padding:4px 6px}
+.sectiontitle{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}.eyebrow{font-size:9px;letter-spacing:.14em}
+.summary,.dispatchForm,.inventory,#run{background:#111624;border:1px solid #2b354a;border-radius:14px;padding:13px;margin-bottom:13px}
+.projectLabel{font-size:10px;color:#9fabcb;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.metricsGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.statBox{border:1px solid #293651;background:linear-gradient(145deg,#1b2336,#111927);padding:11px;border-radius:10px}.statBox strong{display:block;font-size:24px;letter-spacing:-.06em;line-height:1.2;color:#ebeeff}.statBox span{font-size:9px;color:#97a3be}
+.scanMeta{margin:10px 0 8px;color:#98a5c2;font-size:10px;line-height:1.6}.inventoryActions{display:grid;grid-template-columns:1.1fr .9fr;gap:7px}.inventoryActions button{background:#202a43;border:1px solid #425174;color:#dee5ff;border-radius:9px;padding:10px 6px;font-size:10px;font-weight:700}.inventoryActions button:first-child{background:linear-gradient(110deg,#48558e,#35456f)}.inventoryActions button:disabled{opacity:.5}
+.footnote{font-size:9px;color:#78859f;line-height:1.6;margin:10px 0 0}
+#run .runhead{margin:0 0 14px}#run .runmetric strong{font-size:36px}#run .activity{max-height:175px}#run .stats{gap:6px}#run .stats>div{padding:8px}#run .stats strong{font-size:16px}#run .stats span{font-size:9px}#run .runMessage{margin:10px 0 12px}#run .actions{margin-top:12px}
+.dispatchForm .countline input{height:55px;font-size:27px}.dispatchForm .countline span{top:17px}
+.dispatchForm label{margin-top:12px}.dispatchForm .smallnote{margin-top:12px}
+.inventoryList{max-height:340px;overflow:auto;display:grid;gap:6px;margin-top:10px;scrollbar-color:#54617b transparent;scrollbar-width:thin}
+.inventoryItem{display:flex;align-items:flex-start;justify-content:space-between;gap:9px;border:1px solid #2b364d;background:#172033;padding:9px;border-radius:9px}
+.inventoryItem a{font-size:11px;color:#eff3ff;font-weight:720;text-decoration:none;line-height:1.4;overflow-wrap:anywhere}
+.inventoryItem a:hover{text-decoration:underline}.inventoryItem p{color:#8e9bb5;font-size:10px;margin:3px 0 0;line-height:1.35;word-break:break-word}
+.inventoryItem small{color:#8493b0;font-size:9px;white-space:nowrap}
+.inventoryItem .tags{display:flex;gap:5px;align-items:center;margin-top:4px;flex-wrap:wrap}
+.inventoryItem .tag{font-size:8px;color:#99a7c4;border:1px solid #394761;border-radius:15px;padding:1px 5px;white-space:nowrap}
+.inventoryItem .tag.open{color:#8cebd1;border-color:#3e806d}.inventoryItem .tag.visited{color:#bca8ff;border-color:#635497}
+.inventoryItem .right{flex-shrink:0;text-align:right}
+.inventoryItem button{margin-top:6px;color:#cad4ff;background:#202a43;border:1px solid #434f75;border-radius:6px;padding:3px 6px;font-size:9px;cursor:pointer}
+#inventoryFilter{width:100%;border:1px solid #3a4660;border-radius:9px;background:#101625;color:#f1f4ff;padding:9px;font-size:11px}
+#inventoryFilter::placeholder{color:#7887a1}
+#inventoryCount{font-size:10px}footer{position:sticky;bottom:0;background:#0b0e18eF;backdrop-filter:blur(12px);padding:11px 13px;font-size:9px}
+@media(max-width:350px){main{padding:10px}.summary,.dispatchForm,.inventory,#run{padding:10px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}

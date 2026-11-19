@@ -70,12 +70,24 @@ async function until(check,label,ms=2500){
 }
 (async()=>{
   const scan=environment('project');
-  assert.equal(scan.receive({type:'PM_PING'}).version,'0.6.0');
+  assert.equal(scan.receive({type:'PM_PING'}).version,'0.7.0');
   assert.equal(scan.receive({type:'PM_SCAN',jobId:'scan1',pid:project,target:2}).accepted,true);
   await until(()=>scan.messages.some(m=>m.type==='PM_SCANNED'),'scan result');
   const found=scan.messages.find(m=>m.type==='PM_SCANNED');
   assert.equal(found.chats.length,2);
   assert.equal(found.chats[0].title,'First draft');
+  const stream=scan.messages.find(m=>m.type==='PM_SCAN_PROGRESS');
+  assert.ok(stream,'discovery must stream before scan finishes');
+  assert.equal(stream.chats.length,2);
+  assert.equal(stream.pid,project);
+  const context=scan.receive({type:'PM_CONTEXT'});
+  assert.equal(context.projectId,project);
+  assert.equal(context.chats.length,2);
+  assert.equal(context.chats[0].id,'chat-1');
+  const inventory=environment('project');
+  assert.equal(inventory.receive({type:'PM_INVENTORY_SCAN',pid:project,target:2}).accepted,true);
+  await until(()=>inventory.messages.some(m=>m.type==='PM_INVENTORY_DONE'),'inventory scan');
+  assert.equal(inventory.messages.find(m=>m.type==='PM_INVENTORY_DONE').chats.length,2);
 
   const draft=environment('draft');
   assert.equal(draft.receive({type:'PM_APPLY',jobId:'job2',pid:project,cid:'chat-1',prompt:'proceed methodically',effort:'High'}).accepted,true);

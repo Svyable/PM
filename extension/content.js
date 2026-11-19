@@ -1,9 +1,9 @@
-/* PM — Proceed Methodically 0.6 | ChatGPT UI adapter
+/* PM — Proceed Methodically 0.7 | ChatGPT UI adapter
  * Operates only on visible browser UI. No private endpoints or remote telemetry.
  */
 (() => {
   'use strict';
-  const VERSION='0.6.0';
+  const VERSION='0.7.0';
   const old=globalThis.__PM_LISTENER__;
   try {
     if(old&&chrome.runtime.onMessage.hasListener?.(old)){
@@ -21,7 +21,7 @@
   const shown=e=>!!(e&&e.isConnected&&e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden');
   const projectId=()=>location.pathname.match(PROJECT)?.[1]||null;
   const chatId=()=>{const m=location.pathname.match(CHAT);return m?{projectId:m[1],chatId:m[2]}:null;};
-  let stopScan=false,stopApply=false,activeApply=null;
+  let stopScan=false,scanBusy=false,stopApply=false,activeApply=null;
   function findChats(pid){
     const items=[...document.querySelectorAll('a[href*="/c/"]')];
     const preferred=items.filter(a=>a.closest('li[class*="project-chat"]'));
@@ -30,7 +30,10 @@
       const m=url.pathname.match(CHAT);
       if(url.origin!=='https://chatgpt.com'||m?.[1]!==pid)return[];
       const title=norm(a.querySelector('[class*="font-medium"]')?.textContent||a.textContent)||'Untitled chat';
-      return [{id:m[2],url:url.origin+url.pathname,title:title.slice(0,180)}];
+      const listItem=a.closest('li[class*="project-chat"]');
+      const description=norm(a.querySelector('[class*="text-secondary"]')?.textContent||'').slice(0,280);
+      const updated=norm(a.getAttribute('aria-description')||listItem?.querySelector?.('[aria-hidden="true"]')?.textContent||'').slice(0,100);
+      return [{id:m[2],url:url.origin+url.pathname,title:title.slice(0,180),description,updated}];
     });
   }
   function scrollParent(el){
@@ -41,8 +44,10 @@
     return document.scrollingElement||document.documentElement;
   }
   async function report(type,data){try{await chrome.runtime.sendMessage({type,...data});}catch{}}
-  async function scan({jobId,target,pid}){
-    stopScan=false;
+  async function scan({jobId,target,pid,inventory=false}){
+    scanBusy=true;stopScan=false;
+    const progressType=inventory?'PM_INVENTORY_PROGRESS':'PM_SCAN_PROGRESS';
+    const finalType=inventory?'PM_INVENTORY_DONE':'PM_SCANNED';
     const seen=new Map(); let scroller=null,startTop=0,stale=0,stuck=0,lastCount=-1;
     const started=Date.now();
     try{
@@ -56,7 +61,14 @@
           const a=document.querySelector('li[class*="project-chat"] a[href*="/c/"]')||document.querySelector('a[href*="/c/"]');
           scroller=scrollParent(a); startTop=scroller.scrollTop;
         }
-        if(seen.size!==lastCount){lastCount=seen.size;await report('PM_SCAN_PROGRESS',{jobId,found:seen.size});}
+        // Stream discovered rows while the project continues lazy-loading.
+        // This lets a 100-chat run begin on the first batch rather than
+        // waiting minutes for the entire scan to finish.
+        if(seen.size!==lastCount){
+          lastCount=seen.size;
+          await report(progressType,{jobId,pid,found:seen.size,step,
+            chats:[...seen.values()].slice(0,target)});
+        }
         if(seen.size>=target)break;
         stale=seen.size===sizeBefore?stale+1:0;
         if(!scroller){if(step>20)break;await sleep(500);continue;}
@@ -71,9 +83,9 @@
         await sleep(stale>4?800:420);
         if((stale>22&&stuck>10)||stale>40)break;
       }
-      await report('PM_SCANNED',{jobId,found:seen.size,chats:[...seen.values()].slice(0,target)});
-    }catch(e){await report('PM_SCANNED',{jobId,error:String(e.message||e)});}
-    finally{if(scroller?.isConnected)scroller.scrollTop=startTop;}
+      await report(finalType,{jobId,pid,found:seen.size,chats:[...seen.values()].slice(0,target)});
+    }catch(e){await report(finalType,{jobId,pid,error:String(e.message||e),chats:[...seen.values()].slice(0,target)});}
+    finally{scanBusy=false;if(scroller?.isConnected)scroller.scrollTop=startTop;}
   }
   function composer(){
     return ['.ProseMirror[contenteditable="true"][role="textbox"]','[data-composer-markdown][contenteditable="true"]','[contenteditable="true"][aria-label="Ask ChatGPT"]','[contenteditable="true"][role="textbox"]'].map(s=>[...document.querySelectorAll(s)].find(shown)).find(Boolean)||null;
@@ -180,15 +192,29 @@
   const listener=(message,sender,sendResponse)=>{
     if(!message||typeof message.type!=='string')return;
     if(message.type==='PM_PING'){sendResponse({ok:true,version:VERSION,projectId:projectId(),chat:chatId()});return;}
-    if(message.type==='PM_CONTEXT'){sendResponse({ok:true,projectId:projectId(),count:projectId()?findChats(projectId()).length:0});return;}
+    if(message.type==='PM_CONTEXT'){
+      const pid=projectId();const chats=pid?findChats(pid):[];
+      sendResponse({ok:true,projectId:pid,count:chats.length,chats:chats.slice(0,1000),
+        projectTitle:norm(document.querySelector('main h1, main h2, h1')?.textContent||'').slice(0,100)});
+      return;
+    }
+    if(message.type==='PM_STATUS'){
+      const chat=chatId();
+      sendResponse({ok:true,chat,generating:!!chat&&isBusy(),composerReady:!!composer()});
+      return;
+    }
     if(message.type==='PM_READY'){
       const current=chatId();
       sendResponse({ok:true,ready:current?.projectId===message.pid&&current?.chatId===message.cid&&!!composer(),chat:current});
       return;
     }
     if(message.type==='PM_SCAN'){
-      if(projectId()!==message.pid){sendResponse({accepted:false,reason:'Wrong project page'});return;}
+      if(projectId()!==message.pid||scanBusy){sendResponse({accepted:false,reason:scanBusy?'A project scan is already active.':'Wrong project page.'});return;}
       void scan(message);sendResponse({accepted:true});return;
+    }
+    if(message.type==='PM_INVENTORY_SCAN'){
+      if(projectId()!==message.pid||scanBusy){sendResponse({accepted:false,reason:scanBusy?'A project scan is already active.':'Wrong project page.'});return;}
+      void scan({...message,jobId:'inventory-'+Date.now(),inventory:true});sendResponse({accepted:true});return;
     }
     if(message.type==='PM_SCAN_ABORT'){stopScan=true;sendResponse({ok:true});return;}
     if(message.type==='PM_APPLY'){
