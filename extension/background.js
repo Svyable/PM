@@ -147,9 +147,11 @@ async function adapter(tabId){
 // The native side panel is window-scoped and remains open while other tabs
 // are used. Discover a Project without making users click Reconnect.
 async function findProject(preferredTabId=null){
-  const tabs=await chrome.tabs.query({});
+  const [tabs,activeTabs]=await Promise.all([
+    chrome.tabs.query({}),chrome.tabs.query({active:true,currentWindow:true})
+  ]);
   const projects=tabs.filter(t=>projectFromUrl(t.url));
-  const active=tabs.find(t=>t.active&&t.lastFocusedWindow);
+  const active=activeTabs[0];
   const activeProject=active&&projects.find(t=>t.id===active.id);
   const activeChat=chatFromUrl(active?.url);
   const related=activeChat&&projects.find(t=>projectFromUrl(t.url)===activeChat.projectId);
