@@ -1,7 +1,7 @@
 name: Validate PM extension
 on:
   push:
-    branches: [main]
+    branches: [main, 'feat/**', 'fix/**', 'release/**']
     paths:
       - 'extension/**'
       - 'tests/**'
