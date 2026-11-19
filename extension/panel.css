@@ -54,3 +54,37 @@ body[data-pm-mode="panel"] footer{display:flex;justify-content:space-between}
   body[data-pm-mode="panel"] .top{padding:18px 22px}
   body[data-pm-mode="panel"] .inventoryList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+
+/* Project fleet launcher: role differentiation belongs to the mission. */
+.fleetWizard{
+  padding:12px;margin:11px 0 4px;
+  border:1px solid #475d9f;border-radius:12px;
+  background:linear-gradient(140deg,#1b2441,#0f172b 70%)
+}
+.fleetWizard label{display:block;color:#c3cafa;font-weight:650}
+.fleetWizard textarea{
+  box-sizing:border-box;min-height:106px;max-height:220px;resize:vertical;
+  font-size:12px;line-height:1.55;width:100%;border-radius:9px;
+  border:1px solid #3c4c74;background:#0c1426;color:#f2f5ff;padding:10px
+}
+.fleetWizard select{width:100%;max-width:100%}
+.fleetPreview{
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  padding:8px 0 0
+}
+.fleetPreview p{width:100%;margin:1px 0 6px;color:#a7b4d2}
+.fleetRole{
+  font-size:10px;line-height:1.4;white-space:normal;
+  padding:6px 9px;border:1px solid #394c76;color:#d8e3ff;
+  background:#1c2946;border-radius:9px
+}
+.fleetMore{font-size:10px;color:#9aa8cc;font-style:italic;padding:4px}
+body[data-pm-mode="panel"] .fleetWizard{margin-bottom:12px}
+body[data-pm-mode="panel"] .fleetWizard textarea:focus-visible{
+  outline:2px solid #929dff;outline-offset:2px
+}
+@media(min-width:620px){
+  body[data-pm-mode="panel"] .fleetPreview{gap:8px}
+  body[data-pm-mode="panel"] .fleetRole{font-size:11px}
+}
