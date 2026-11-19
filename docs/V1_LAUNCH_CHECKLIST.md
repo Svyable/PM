@@ -1,7 +1,7 @@
 # PM v1.0 launch gate
 
 **State: NOT APPROVED FOR PUBLIC v1.0 RELEASE**
-**Candidate: 0.10.0**
+**Candidate: 0.10.1**
 **Prepared: November 18, 2026**
 
 Green automated tests demonstrate code paths, not authenticated ChatGPT compatibility or third-party authorization.
@@ -100,3 +100,5 @@ Keep the 0.7 installer on GitHub. Stop the run, inspect uncertain sends before m
 - [ ] If ChatGPT navigates away before Send, PM restores the original URL in the same tab at most twice, without marking a send or duplicating it.
 - [ ] For a permanently wrong route, PM pauses with an actionable reason and a Stop control.
 - [ ] Browser close/reopen and service-worker restart cannot replay an uncertain Send.
+
+- [ ] Opening PM from the Project page creates a global, window-wide side panel that remains open when the user switches Chrome tabs.
