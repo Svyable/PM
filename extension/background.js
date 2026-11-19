@@ -1,8 +1,8 @@
-/* PM — Proceed Methodically 0.10 | Chrome MV3 coordinator
+/* PM — Proceed Methodically 0.10.1 | Chrome MV3 coordinator
  * Single bounded queue; never retries an uncertain send.
  */
 'use strict';
-const VERSION='0.10.0', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
+const VERSION='0.10.1', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
 const PROJECT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/project\/?(?:[?#].*)?$/;
 const CHAT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/c\/([a-zA-Z0-9-]+)\/?$/;
 const DEFAULTS={mode:'existing',newCount:1,target:10,prompt:'proceed methodically',effort:'High',delaySeconds:4,loadTimeoutSeconds:180,keepTabs:true};
@@ -476,7 +476,9 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
   if(m.type==='PM_OPEN_PANEL'){
     if(!projectFromUrl(s.tab?.url))return reply(Promise.reject(Error('Open a ChatGPT Project overview.')));
     // Called directly from a button click in the page; don't await before open.
-    return reply(chrome.sidePanel.open({tabId:s.tab.id}).then(()=>({ok:true})));
+    // A window-scoped global side panel stays available while users switch
+    // tabs. A tab-scoped panel can disappear when the Project tab loses focus.
+    return reply(chrome.sidePanel.open({windowId:s.tab.windowId}).then(()=>({ok:true})));
   }
   if(m.type==='PM_GET_JOB')return reply(load().then(job=>({ok:true,job})));
   if(m.type==='PM_HOST_CONTEXT')return reply((async()=>{
