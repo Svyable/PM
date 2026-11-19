@@ -32,7 +32,7 @@
       const title=norm(a.querySelector('[class*="font-medium"]')?.textContent||a.textContent)||'Untitled chat';
       const listItem=a.closest('li[class*="project-chat"]');
       const description=norm(a.querySelector('[class*="text-secondary"]')?.textContent||'').slice(0,280);
-      const updated=norm(a.getAttribute('aria-description')||listItem?.querySelector('[aria-hidden="true"]')?.textContent||'').slice(0,100);
+      const updated=norm(a.getAttribute('aria-description')||listItem?.querySelector?.('[aria-hidden="true"]')?.textContent||'').slice(0,100);
       return [{id:m[2],url:url.origin+url.pathname,title:title.slice(0,180),description,updated}];
     });
   }
