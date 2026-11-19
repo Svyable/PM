@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="PM / Proceed Methodically extension: data collection, local storage, permissions, and privacy controls.">
+<title>Privacy & Data Use — PM / Proceed Methodically</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,sans-serif;background:#0a0d17;color:#edf0ff;line-height:1.75}
+*{box-sizing:border-box}body{margin:0}header,main,footer{max-width:880px;margin:0 auto;padding:24px}header{border-bottom:1px solid #333b55;display:flex;align-items:center;justify-content:space-between;gap:20px}header strong{font-size:20px;letter-spacing:-.04em}header strong span{color:#929dff}a{color:#a7b3ff;text-underline-offset:3px}main{padding-top:56px;padding-bottom:76px}h1{font-size:clamp(38px,6vw,64px);line-height:1.1;letter-spacing:-.06em;margin:0 0 20px}h2{font-size:24px;letter-spacing:-.035em;margin:45px 0 8px}p,li{color:#b7c0d5}ul{padding-left:25px}strong{color:#f4f5ff}.tag{display:inline-block;background:#252d50;color:#bbc4ff;border:1px solid #3c4977;border-radius:25px;font-size:12px;font-weight:700;padding:4px 12px;margin-bottom:24px}.notice{border:1px solid #394467;background:#151c30;border-radius:14px;padding:17px 21px;margin:30px 0;color:#cbd3e9}footer{border-top:1px solid #303a50;font-size:12px;color:#919bb6;display:flex;justify-content:space-between;gap:20px}@media(max-width:550px){header,main,footer{padding-left:19px;padding-right:19px}footer{flex-direction:column}}
+</style>
+</head>
+<body>
+<header><strong>PM <span>/ Proceed Methodically</span></strong><a href="./index.html">← Back to PM</a></header>
+<main>
+<div class="tag">Privacy & data practices · Prepared for v1 review</div>
+<h1>Local-first by design.</h1>
+<p><strong>PM is a third-party Chrome extension, independent of OpenAI.</strong> This document describes what the PM code currently reads and stores, and the boundaries of that data. Updated November 18, 2026.</p>
+<div class="notice">PM is a release candidate, not a verified Chrome Web Store product. This privacy description covers the locally installed extension's documented behavior; you should also review <a href="https://openai.com/policies/terms-of-use/">OpenAI's Terms of Use</a> and your browser's privacy practices.</div>
+<h2>Information PM handles</h2>
+<ul>
+<li><strong>Dispatch preferences:</strong> the prompt you type, selected conversation count, effort level, pacing, tab retention setting, and readiness timeout.</li>
+<li><strong>Project inventory:</strong> identifiers, chat URLs, titles, visible snippets, and update labels from ChatGPT Project pages that you choose to view or scan.</li>
+<li><strong>Run activity:</strong> selected chat IDs and URLs, message-send verification results, errors, approximate timing information, and queue state.</li>
+<li><strong>Observed browser activity:</strong> whether relevant ChatGPT tabs are open, whether responsive open tabs expose a generation indicator, and locally recorded visit timestamps.</li>
+</ul>
+<p>PM checks for a newly rendered user message matching your chosen prompt to verify a send. It is <strong>not designed to retrieve, export, or store full assistant responses</strong>. PM does not ask for account passwords or read browser cookies.</p>
+<h2>Where information goes</h2>
+<p>PM uses <strong>Chrome local extension storage</strong> for preferences, the current/latest job, discovered project metadata, and visit timestamps. The extension has no PM-operated analytics server, database, third-party tracker, or remote code loader. There is no automatic sale or upload of this locally stored information to PM's maintainers.</p>
+<p>When you explicitly launch a dispatch, the prompt is submitted <strong>to ChatGPT</strong> through the interface on the selected conversation pages, just as if you had typed and sent it. ChatGPT processes that submission under its own policies. PM cannot control data handling by ChatGPT, Chrome, GitHub, or their underlying infrastructure.</p>
+<h2>Permissions and purpose</h2>
+<ul>
+<li><strong>chatgpt.com host access:</strong> read visible Project conversation links and interact with the chat composer only when a dispatch is triggered.</li>
+<li><strong>tabs:</strong> open the selected conversations, identify project tabs, and display open-tab status.</li>
+<li><strong>storage:</strong> persist preferences, inventory, visits, and job recovery state locally.</li>
+<li><strong>scripting:</strong> reconnect the UI adapter if a ChatGPT tab predates extension installation or update.</li>
+<li><strong>alarms:</strong> check and recover from interrupted or delayed dispatch states.</li>
+</ul>
+<h2>Retention and control</h2>
+<p>PM does not currently apply automatic time-based deletion. Project metadata and visit records can persist in the browser profile while PM remains installed. Exporting a run log saves a separate JSON file on your device that may contain the prompt, chat URLs, and errors; share it only if you choose to.</p>
+<p>To discontinue data collection, disable PM at <code>chrome://extensions</code>. To discard extension-local data, uninstall PM through Chrome's extension management controls. Previously exported files should be deleted separately. A dedicated selective-clear control is on the v1 roadmap and is <strong>not</strong> claimed to exist yet.</p>
+<h2>What PM cannot accurately report</h2>
+<p>The visible ChatGPT Project interface does not provide a reliable universal read/unread flag. PM therefore reports <strong>visited</strong> rather than claiming messages were read. A detected “generating” count covers only responsive open tabs inspected by PM; it is not an authoritative count of all jobs running in a project.</p>
+<h2>Contact, questions, and changes</h2>
+<p>For ordinary support and privacy questions, open an issue at <a href="https://github.com/Svyable/PM/issues">github.com/Svyable/PM/issues</a>. Do not put private prompts, account information, or sensitive conversation contents into public issues. If the extension's data practices change, this page and the extension's release notes should be revised before deployment.</p>
+</main>
+<footer><span>© 2026 Svyable · PM is independent of OpenAI.</span><span><a href="./index.html">Product guide</a> · <a href="https://github.com/Svyable/PM">Source</a></span></footer>
+</body></html>

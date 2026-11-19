@@ -77,11 +77,13 @@ function setup(options={}){
         if(msg.type==='PM_APPLY'){
           if(!tab.ready||tab.route!==msg.cid)throw Error('Wrong chat was targeted');
           attempts.push({tabId:id,chatId:msg.cid,prompt:msg.prompt,token:msg.attemptToken});
-          const uncertain=options.uncertainFirst&&msg.cid==='chat-one';
+          const uncertain=(options.uncertainFirst&&msg.cid==='chat-one')||(options.uncertainSecond&&msg.cid==='chat-two');
+          const skipped=options.draftFirst&&msg.cid==='chat-one';
           setTimeout(()=>void request('PM_RESULT',{
             jobId:msg.jobId,chatId:msg.cid,attemptToken:msg.attemptToken,
-            ok:!uncertain,uncertain,reasonCode:uncertain?'unconfirmed':'sent',
-            error:uncertain?'No matching rendered user message':null
+            ok:!uncertain&&!skipped,uncertain,
+            reasonCode:uncertain?'unconfirmed':skipped?'draft':'sent',
+            error:uncertain?'No matching rendered user message':skipped?'Existing draft preserved':null
           },id),20);
           return{accepted:true};
         }
@@ -130,6 +132,38 @@ function setup(options={}){
   assert.equal((await uncertain.request('PM_RESUME')).ok,true);
   await waitFor(()=>uncertain.storage.pmJob?.status==='done','uncertain run resume');
   assert.deepEqual(uncertain.attempts.map(a=>a.chatId),['chat-one','chat-two']);
+
+  // Critical v1 gate: a final unconfirmed send must NOT display a green
+  // completed run, even when all queued conversations have been attempted.
+  const finalUncertain=setup({uncertainSecond:true});
+  await finalUncertain.request('PM_START',{tabId:1,config:finalUncertain.prefs});
+  await waitFor(()=>finalUncertain.storage.pmJob?.status==='paused'&&finalUncertain.storage.pmJob.index===2,'final unconfirmed attention state',8000);
+  assert.equal(finalUncertain.storage.pmJob.completed,1);
+  assert.equal(finalUncertain.storage.pmJob.failed,1);
+  assert.equal(finalUncertain.storage.pmJob.results[1].uncertain,true);
+  assert.equal(finalUncertain.storage.pmJob.status,'paused','final uncertain result must remain attention-needed');
+  assert.equal((await finalUncertain.request('PM_RESUME')).ok,true);
+  await waitFor(()=>finalUncertain.storage.pmJob?.status==='done','acknowledged final result',2500);
+  assert.equal(finalUncertain.attempts.length,2,'acknowledgment must not retry the last send');
+
+  // Pre-send failure reports must advance promptly; do not stall for 90 s.
+  const draftSkip=setup({draftFirst:true});
+  await draftSkip.request('PM_START',{tabId:1,config:draftSkip.prefs});
+  await waitFor(()=>draftSkip.storage.pmJob?.status==='done','draft skip and next chat',7500);
+  assert.equal(draftSkip.storage.pmJob.failed,1);
+  assert.equal(draftSkip.storage.pmJob.completed,1);
+  assert.equal(draftSkip.storage.pmJob.results[0].reasonCode,'draft');
+
+  // The toolbar and project dock may both be used: only one job can start.
+  const concurrent=setup();
+  const starts=await Promise.all([
+    concurrent.request('PM_START',{tabId:1,config:concurrent.prefs}),
+    concurrent.request('PM_START',{tabId:1,config:concurrent.prefs})
+  ]);
+  assert.equal(starts.filter(x=>x.ok===true).length,1);
+  assert.equal(starts.filter(x=>x.ok===false).length,1);
+  await waitFor(()=>concurrent.storage.pmJob?.status==='done','single concurrent run',7500);
+  assert.equal(concurrent.attempts.length,2);
 
   const delayed=setup({slowFirst:true,delayMs:1100});
   await delayed.request('PM_START',{tabId:1,config:delayed.prefs});

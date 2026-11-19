@@ -15,7 +15,7 @@ function environment(mode){
   };
   const form={querySelector(sel){return sel==='button[data-selected-reasoning-effort]'?effort:null;}};
   const effort={
-    isConnected:true,getClientRects:()=>[{}],textContent:'High',
+    isConnected:mode!=='noeffort',getClientRects:()=>[{}],textContent:'High',
     getAttribute(k){return k==='data-selected-reasoning-effort'?'high':null;},click(){}
   };
   const messageNodes=mode==='existingmatch'?[{isConnected:true,getClientRects:()=>[{}],innerText:'proceed methodically',querySelector(){return null;}}]:[];
@@ -90,10 +90,25 @@ async function until(check,label,ms=2500){
   assert.equal(inventory.messages.find(m=>m.type==='PM_INVENTORY_DONE').chats.length,2);
 
   const draft=environment('draft');
-  assert.equal(draft.receive({type:'PM_APPLY',jobId:'job2',pid:project,cid:'chat-1',prompt:'proceed methodically',effort:'High'}).accepted,true);
+  assert.equal(draft.receive({type:'PM_APPLY',jobId:'job2',pid:project,cid:'chat-1',attemptToken:'draft-token',prompt:'proceed methodically',effort:'High'}).accepted,true);
   await until(()=>draft.messages.some(m=>m.type==='PM_RESULT'),'draft result');
   assert.equal(draft.messages.find(m=>m.type==='PM_RESULT').reasonCode,'draft');
+  assert.equal(draft.messages.find(m=>m.type==='PM_RESULT').attemptToken,'draft-token');
   assert.equal(draft.clicks,0);
+
+  for(const mode of ['noeffort','chat']){
+    const failed=environment(mode);
+    const cid=mode==='chat'?'chat-2':'chat-1';
+    const token='failure-'+mode;
+    assert.equal(failed.receive({type:'PM_APPLY',jobId:'early-'+mode,pid:project,cid,
+      attemptToken:token,prompt:'proceed methodically',effort:'High'}).accepted,true);
+    await until(()=>failed.messages.some(m=>m.type==='PM_RESULT'),mode+' failure result');
+    const result=failed.messages.find(m=>m.type==='PM_RESULT');
+    assert.equal(result.attemptToken,token,mode+' error must retain dispatch token');
+    assert.equal(result.ok,false);
+    assert.equal(result.reasonCode,mode==='chat'?'wrong-chat':'effort');
+    assert.equal(failed.clicks,0,mode+' error must not send');
+  }
 
   const send=environment('chat');
   assert.equal(send.receive({type:'PM_READY',pid:project,cid:'chat-1'}).ready,true);
@@ -106,12 +121,13 @@ async function until(check,label,ms=2500){
 
   for(const mode of ['cleared','wrongturn','existingmatch']){
     const unsafe=environment(mode);
-    unsafe.receive({type:'PM_APPLY',jobId:'negative-'+mode,pid:project,cid:'chat-1',prompt:'proceed methodically',effort:'High'});
+    unsafe.receive({type:'PM_APPLY',jobId:'negative-'+mode,pid:project,cid:'chat-1',attemptToken:'negative-'+mode,prompt:'proceed methodically',effort:'High'});
     await until(()=>unsafe.messages.some(m=>m.type==='PM_RESULT'),mode+' unconfirmed result');
     const result=unsafe.messages.find(m=>m.type==='PM_RESULT');
     assert.equal(result.ok,false,mode+' should not be a confirmed send');
     assert.equal(result.uncertain,true,mode+' should warn about possible prior submission');
     assert.equal(result.reasonCode,'unconfirmed');
+    assert.equal(result.attemptToken,'negative-'+mode);
     assert.equal(unsafe.clicks,1,mode+' must not retry');
   }
   console.log('PM adapter regression tests passed: scanning, drafts, matching new message, no false confirmations and one click per attempt.');
