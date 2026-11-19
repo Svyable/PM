@@ -2,7 +2,7 @@
 
 **One prompt. Many conversations.** PM is a local-first Chrome extension that initiates a user-selected prompt across existing conversations in a ChatGPT Project.
 
-[**Download PM v0.9.0 (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.10.0.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
+[**Download PM v0.9.0 (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.10.1.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
 
 ## Install
 
@@ -30,7 +30,7 @@ All activity and inventory information stays in Chrome local storage. PM does no
 
 ## PM v0.10 — Full side panel and automatic Project connection
 
-The browser toolbar PM icon now opens **Chrome's native side panel**, not a small popup. Keep it open while working in other tabs. Chrome controls its placement and resizable width. A compact PM launcher is also visible at the lower right of each ChatGPT Project overview; click it to open the same full panel. Chrome requires a user gesture to open an extension side panel, so PM does not force it open without a click.
+The browser toolbar PM icon now opens **Chrome's native side panel**, not a small popup. Keep it open while working in other tabs. Chrome controls its placement and resizable width. A compact PM launcher is also visible at the lower right of each ChatGPT Project overview; click it to open the same **window-wide** side panel that stays available when you switch tabs. Chrome requires a user gesture to open an extension side panel, so PM does not force it open without a click.
 
 The launch form is always visible in the full panel, even when a run is paused; there is no Reconnect button. PM automatically discovers an open ChatGPT Project tab and adapts when you switch Projects. To send, keep at least one Project overview tab open and select the intended Project before launching.
 
@@ -79,7 +79,7 @@ PM **streams the first discovered chat batch into the dispatch queue immediately
 
 ## Preparing for PM v1
 
-**0.10.0 is a feature candidate, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
+**0.10.1 is a feature candidate, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
 
 - [v1 go/no-go and live-browser test checklist](docs/V1_LAUNCH_CHECKLIST.md)
 - [Authenticated browser QA runbook](docs/QA_RUNBOOK.md)
