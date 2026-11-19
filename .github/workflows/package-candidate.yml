@@ -1,0 +1,43 @@
+name: Build PM v1 candidate installer
+on:
+  push:
+    branches: [release/v1-hardening]
+    paths:
+      - 'extension/**'
+      - 'scripts/package.mjs'
+      - '.github/workflows/package-candidate.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check code syntax
+        run: |
+          node --check scripts/package.mjs
+          node --check extension/background.js
+          node --check extension/content.js
+      - name: Build deterministic installer
+        run: node scripts/package.mjs --write-repo
+      - name: Verify installer integrity
+        run: |
+          node scripts/package.mjs --verify
+          unzip -t docs/downloads/PM-Chrome-Extension-v0.8.0.zip
+          sha256sum docs/downloads/PM-Chrome-Extension-v0.8.0.zip
+      - name: Save installable candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: PM-v0.8.0-launch-candidate
+          path: docs/downloads/PM-Chrome-Extension-v0.8.0.zip
+          if-no-files-found: error
+      - name: Commit generated installer to release branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/downloads/PM-Chrome-Extension-v0.8.0.zip
+          if ! git diff --cached --quiet; then
+            git commit -m 'Build reproducible PM 0.8.0 installer [skip ci]'
+            git push origin HEAD:release/v1-hardening
+          fi
