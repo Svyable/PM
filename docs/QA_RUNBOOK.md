@@ -103,3 +103,5 @@ Link this signed-off runbook to the v1 GO/NO-GO tracking issue. Keep the issue o
 - [ ] While two test conversations dispatch, freely work in another Chrome tab. Confirm progress remains visible when returning to the PM panel.
 - [ ] Simulate a pre-send route change in a disposable Project and inspect that PM reopens the queued URL in the same tab, with bounded retries. Never mark a wrong-chat send as successful.
 - [ ] Test a route that never stabilizes: PM must pause safely and offer Stop.
+
+- [ ] After using the Project launcher, switch to an unrelated Chrome tab; verify the PM side panel stays open in the same browser window (global window-scoped panel).
