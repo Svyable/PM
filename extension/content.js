@@ -21,7 +21,7 @@
   const shown=e=>!!(e&&e.isConnected&&e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden');
   const projectId=()=>location.pathname.match(PROJECT)?.[1]||null;
   const chatId=()=>{const m=location.pathname.match(CHAT);return m?{projectId:m[1],chatId:m[2]}:null;};
-  let stopScan=false,stopApply=false,activeApply=null;
+  let stopScan=false,scanBusy=false,stopApply=false,activeApply=null;
   function findChats(pid){
     const items=[...document.querySelectorAll('a[href*="/c/"]')];
     const preferred=items.filter(a=>a.closest('li[class*="project-chat"]'));
@@ -44,8 +44,10 @@
     return document.scrollingElement||document.documentElement;
   }
   async function report(type,data){try{await chrome.runtime.sendMessage({type,...data});}catch{}}
-  async function scan({jobId,target,pid}){
-    stopScan=false;
+  async function scan({jobId,target,pid,inventory=false}){
+    scanBusy=true;stopScan=false;
+    const progressType=inventory?'PM_INVENTORY_PROGRESS':'PM_SCAN_PROGRESS';
+    const finalType=inventory?'PM_INVENTORY_DONE':'PM_SCANNED';
     const seen=new Map(); let scroller=null,startTop=0,stale=0,stuck=0,lastCount=-1;
     const started=Date.now();
     try{
@@ -64,7 +66,7 @@
         // waiting minutes for the entire scan to finish.
         if(seen.size!==lastCount){
           lastCount=seen.size;
-          await report('PM_SCAN_PROGRESS',{jobId,found:seen.size,step,
+          await report(progressType,{jobId,pid,found:seen.size,step,
             chats:[...seen.values()].slice(0,target)});
         }
         if(seen.size>=target)break;
@@ -81,9 +83,9 @@
         await sleep(stale>4?800:420);
         if((stale>22&&stuck>10)||stale>40)break;
       }
-      await report('PM_SCANNED',{jobId,found:seen.size,chats:[...seen.values()].slice(0,target)});
-    }catch(e){await report('PM_SCANNED',{jobId,error:String(e.message||e)});}
-    finally{if(scroller?.isConnected)scroller.scrollTop=startTop;}
+      await report(finalType,{jobId,pid,found:seen.size,chats:[...seen.values()].slice(0,target)});
+    }catch(e){await report(finalType,{jobId,pid,error:String(e.message||e),chats:[...seen.values()].slice(0,target)});}
+    finally{scanBusy=false;if(scroller?.isConnected)scroller.scrollTop=startTop;}
   }
   function composer(){
     return ['.ProseMirror[contenteditable="true"][role="textbox"]','[data-composer-markdown][contenteditable="true"]','[contenteditable="true"][aria-label="Ask ChatGPT"]','[contenteditable="true"][role="textbox"]'].map(s=>[...document.querySelectorAll(s)].find(shown)).find(Boolean)||null;
@@ -207,8 +209,12 @@
       return;
     }
     if(message.type==='PM_SCAN'){
-      if(projectId()!==message.pid){sendResponse({accepted:false,reason:'Wrong project page'});return;}
+      if(projectId()!==message.pid||scanBusy){sendResponse({accepted:false,reason:scanBusy?'A project scan is already active.':'Wrong project page.'});return;}
       void scan(message);sendResponse({accepted:true});return;
+    }
+    if(message.type==='PM_INVENTORY_SCAN'){
+      if(projectId()!==message.pid||scanBusy){sendResponse({accepted:false,reason:scanBusy?'A project scan is already active.':'Wrong project page.'});return;}
+      void scan({...message,jobId:'inventory-'+Date.now(),inventory:true});sendResponse({accepted:true});return;
     }
     if(message.type==='PM_SCAN_ABORT'){stopScan=true;sendResponse({ok:true});return;}
     if(message.type==='PM_APPLY'){
