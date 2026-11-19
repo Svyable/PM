@@ -2,7 +2,7 @@
 
 **One prompt. Many conversations.** PM is a local-first Chrome extension that initiates a user-selected prompt across existing conversations in a ChatGPT Project.
 
-[**Download PM v0.7.0 (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.7.0.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
+[**Download PM v0.8.0 (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.8.0.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
 
 ## Install
 
@@ -49,7 +49,17 @@ PM **streams the first discovered chat batch into the dispatch queue immediately
 - PM keeps settings, queue and results in Chrome local storage; no PM server or analytics.
 - PM is independent and **not affiliated with OpenAI**.
 
-**Beta status:** Mock DOM, project panel and Chrome service-worker integration tests cover streaming queue discovery, slow navigation, temporary mismatched conversation IDs, same-tab retry after readiness timeout, duplicate tab-event recovery, and uncertain-send circuit breaking, but successful dispatch on a live, authenticated ChatGPT session has not been independently verified. Test 1 chat, inspect the sent message, then test 5 before attempting larger batches.
+**v1 launch candidate status:** Mock DOM, project panel and Chrome service-worker integration tests cover streaming queue discovery, slow navigation, temporary mismatched conversation IDs, same-tab retry after readiness timeout, duplicate tab-event recovery, and uncertain-send circuit breaking, but successful dispatch on a live, authenticated ChatGPT session has not been independently verified. Test 1 chat, inspect the sent message, then test 5 before attempting larger batches.
+
+## Preparing for PM v1
+
+**0.8.0 is a hardening build, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
+
+- [v1 go/no-go and live-browser test checklist](docs/V1_LAUNCH_CHECKLIST.md)
+- [Privacy and data-handling disclosure](docs/privacy.html)
+- [Chrome Web Store listing and permission justifications](docs/STORE_LISTING_DRAFT.md)
+
+The critical 0.8 changes fix missing attempt tokens on all failure outcomes, keep an unconfirmed final send in an attention-needed state, and prevent concurrent Launch clicks from starting overlapping jobs. The installer now has a reproducible source-backed build and byte-level integrity check.
 
 ## Repository layout
 
@@ -68,12 +78,23 @@ PM **streams the first discovered chat batch into the dispatch queue immediately
     docs/downloads/              — direct install ZIP
     tests/adapter.mock.cjs       — mock scan, drafts and single-send checks
     tests/panel.mock.cjs      — dock, collapse, project-route cleanup
+    scripts/package.mjs      — deterministic installer packaging
     .github/workflows/check.yml  — automated validation
     .github/workflows/pages.yml  — Pages deployment
 
-## Test
+## Verify and package
 
-Run `node --check extension/background.js`, `node --check extension/content.js`, `node --check extension/popup.js`, `node --check extension/project-panel.js`, `node --check extension/panel.js`, `node tests/adapter.mock.cjs`, `node tests/coordinator.mock.cjs`, `node tests/panel.mock.cjs`, and `unzip -t docs/downloads/PM-Chrome-Extension-v0.7.0.zip`.
+Requires Node 20+ and no third-party npm dependencies.
+
+- node --check extension/background.js
+- node --check extension/content.js
+- node --check extension/popup.js
+- node tests/adapter.mock.cjs
+- node tests/coordinator.mock.cjs
+- node tests/panel.mock.cjs
+- node scripts/package.mjs --verify
+
+To build a new deterministic archive locally, run node scripts/package.mjs. This writes to dist/ without changing the repository. Use the --write-repo option only when explicitly preparing a new verified release.
 
 See [GitHub Actions](https://github.com/Svyable/PM/actions) for CI results.
 
@@ -89,4 +110,4 @@ The workflow tried to create the Pages site itself, but GitHub denied that permi
 
 ## License
 
-The source is publicly viewable; a redistribution license has not yet been selected. Public repository access alone does not grant open-source redistribution rights.
+The source is publicly viewable; a redistribution license has not yet been selected or approved by the owner. Public repository access alone does not grant open-source redistribution rights.
