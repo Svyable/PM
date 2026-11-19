@@ -1,9 +1,9 @@
-/* PM — Proceed Methodically 0.9 | ChatGPT UI adapter
+/* PM — Proceed Methodically 0.10 | ChatGPT UI adapter
  * Operates only on visible browser UI. No private endpoints or remote telemetry.
  */
 (() => {
   'use strict';
-  const VERSION='0.9.1';
+  const VERSION='0.10.0';
   const old=globalThis.__PM_LISTENER__;
   try {
     if(old&&chrome.runtime.onMessage.hasListener?.(old)){
@@ -195,6 +195,10 @@
     stopApply=false;
     const creating=kind==='new',current=chatId();
     const correct=creating?projectId()===pid&&!current:current?.projectId===pid&&current?.chatId===cid;
+    const routeMatches=()=>{
+      const live=chatId();
+      return creating?projectId()===pid&&!live:live?.projectId===pid&&live?.chatId===cid;
+    };
     if(!correct){
       await report('PM_RESULT',{jobId,chatId:cid,attemptToken,
         ...fail('wrong-chat',creating?'Project overview changed before new-chat submission.':'Chat page did not match the queued conversation.')});
@@ -210,6 +214,9 @@
       if(isBusy())throw Object.assign(Error('This chat is already generating.'),{reasonCode:'busy'});
       await setEffort(box,effort);
       if(stopApply)throw Error('Aborted before send.');
+      // ChatGPT may navigate while its effort picker opens. Re-check before
+      // typing so a late route change never populates the wrong conversation.
+      if(!routeMatches())throw Object.assign(Error('Chat changed during effort selection; no prompt was inserted or sent.'),{reasonCode:'wrong-chat'});
       box.focus();const inserted=document.execCommand('insertText',false,prompt);
       if(!inserted||norm(box.innerText||box.textContent)!==norm(prompt)){
         if(draftPresent(box)&&norm(box.innerText||box.textContent)!==norm(prompt))throw Object.assign(Error('Composer contained unexpected text; not sending.'),{reasonCode:'composer'});
@@ -221,9 +228,15 @@
       for(let i=0;i<18;i++){send=sendButton();if(send&&!send.disabled&&send.getAttribute('aria-disabled')!=='true')break;await sleep(180);}
       if(!send||send.disabled||send.getAttribute('aria-disabled')==='true')throw Object.assign(Error('Send button not ready. Prompt left in the composer.'),{reasonCode:'send'});
       if(stopApply)throw Error('Aborted before send.');
-      const live=chatId();
-      if(creating?(projectId()!==pid||!!live):(live?.projectId!==pid||live?.chatId!==cid))
-        throw Object.assign(Error('The target page navigated away before Send; prompt was NOT submitted.'),{reasonCode:'wrong-chat'});
+      if(!routeMatches()){
+        // The editor was empty before PM typed. Remove only the exact PM text
+        // from that editor; never click Send when route identity differs.
+        if(norm(box.innerText||box.textContent)===norm(prompt)){
+          box.textContent='';
+          box.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'deleteContentBackward'}));
+        }
+        throw Object.assign(Error('ChatGPT changed conversation during preparation. Nothing was submitted.'),{reasonCode:'wrong-chat'});
+      }
       const before=new Set(userMessages());
       // New project chat must not accidentally resolve to an already-visible
       // conversation when the UI navigates after submission.
