@@ -36,6 +36,12 @@ function environment(route){
   assert.equal(manifest.action.default_popup,undefined,'toolbar must open native side panel, not popup');
   assert.ok(manifest.permissions.includes('sidePanel'));
   assert.equal(manifest.side_panel.default_path,'panel.html');
+  const html=fs.readFileSync(path.join(__dirname,'..','extension','panel.html'),'utf8');
+  assert.ok(html.indexOf('<section id="setup"')<html.indexOf('<section id="run"'),'launch form must precede run log');
+  assert.ok(!html.includes('id="reconnect"'),'manual Reconnect must not exist');
+  assert.ok(html.includes('id="mode"')&&html.includes('id="prompt"')&&html.includes('id="effort"'));
+  assert.ok(html.includes('id="target"')&&html.includes('id="loadTimeout"'));
+  assert.ok(!manifest.web_accessible_resources,'native panel should not require public iframe resources');
   const page=environment('/g/'+project+'/project');
   assert.equal(page.nodes.length,1,'project launcher must be visible');
   const host=page.nodes[0];
