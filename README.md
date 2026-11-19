@@ -2,7 +2,7 @@
 
 **One prompt. Many conversations.** PM is a local-first Chrome extension that initiates a user-selected prompt across existing conversations in a ChatGPT Project.
 
-[**Download PM v0.9.0 (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.9.1.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
+[**Download PM v0.9.0 (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.10.0.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
 
 ## Install
 
@@ -14,9 +14,9 @@
 
 No PM service account, backend, or telemetry.
 
-## Persistent Project Command Center (v0.7)
+## Full Chrome Side Panel (v0.10)
 
-PM now appears as a **docked right-side project command center** whenever a ChatGPT Project overview is open. It is not limited to the toolbar popup. Collapse it with the small PM tab on its left edge and reopen it without leaving the project. At desktop widths the project page narrows to reserve room for the dock; at smaller widths it is an overlay that you can collapse.
+PM's full command center lives in Chrome's native, resizable side panel. The Project overview retains a minimal floating launcher at the lower right; there is no injected full-height iframe or forced page resize.
 
 The dashboard includes a live dispatch timeline with explicit **scanning / page readiness / sending / verification** stages, plus a project inventory showing:
 
@@ -27,6 +27,16 @@ The dashboard includes a live dispatch timeline with explicit **scanning / page 
 - **Conversation inventory:** names, visible snippets and updated labels when the project DOM exposes them, linked to open the individual chat, with PM visit and open-tab annotations.
 
 All activity and inventory information stays in Chrome local storage. PM does not scrape private API endpoints, read hidden app state, or claim to know if closed threads are generating.
+
+## PM v0.10 — Full side panel and automatic Project connection
+
+The browser toolbar PM icon now opens **Chrome's native side panel**, not a small popup. Keep it open while working in other tabs. Chrome controls its placement and resizable width. A compact PM launcher is also visible at the lower right of each ChatGPT Project overview; click it to open the same full panel. Chrome requires a user gesture to open an extension side panel, so PM does not force it open without a click.
+
+The launch form is always visible in the full panel, even when a run is paused; there is no Reconnect button. PM automatically discovers an open ChatGPT Project tab and adapts when you switch Projects. To send, keep at least one Project overview tab open and select the intended Project before launching.
+
+If ChatGPT changes route **before** Send, PM tries restoring the originally queued conversation in the same tab up to twice, without marking it sent or moving the queue. The fail-closed logic still pauses if it cannot verify the correct route, and **never** retries an uncertain click.
+
+**Upgrade:** stop any run created by an earlier PM version; load PM 0.10 unpacked at `chrome://extensions`, and refresh your Project page. Click the PM toolbar icon or the bottom-right on-page launcher.
 
 ## Continue existing threads or start new ones (v0.9)
 
@@ -69,7 +79,7 @@ PM **streams the first discovered chat batch into the dispatch queue immediately
 
 ## Preparing for PM v1
 
-**0.9.1 is a feature candidate, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
+**0.10.0 is a feature candidate, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
 
 - [v1 go/no-go and live-browser test checklist](docs/V1_LAUNCH_CHECKLIST.md)
 - [Authenticated browser QA runbook](docs/QA_RUNBOOK.md)
