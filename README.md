@@ -2,7 +2,7 @@
 
 **One prompt. Many conversations.** PM is a local-first Chrome extension that initiates a user-selected prompt across existing conversations in a ChatGPT Project.
 
-[**Download PM v0.9.0 (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.9.0.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
+[**Download PM v0.9.0 (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.9.1.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
 
 ## Install
 
@@ -40,6 +40,10 @@ Creating a new conversation requires sending a prompt. PM does not claim to crea
 
 A new chat with an uncertain send is recorded for inspection and is not retried automatically. Test one new conversation first to confirm that the current ChatGPT UI routes it to the selected Project.
 
+### Effort-picker compatibility (0.9.1)
+
+PM now prioritizes the visible current-effort control over generic reasoning navigation, recognizes when High is already selected, and waits longer for background tab menus to render. If the selected effort cannot be verified, PM reports the detected menu labels and **does not send**. The `Keep current` mode is a diagnostic workaround, not a promise of High effort. A Chrome background tab should not require manual focus, but browser Memory Saver or Energy Saver can delay or suspend background activity.
+
 ## Use PM
 
 Open a ChatGPT Project overview, click PM, and choose a count (1–1,000), instruction (default: `proceed methodically`), effort (default: **High**), spacing (default: 4 seconds), slow-page patience (default: 3 minutes, configurable from 1 to 10), and whether to keep launched tabs open. Click **Launch PM**.
@@ -65,7 +69,7 @@ PM **streams the first discovered chat batch into the dispatch queue immediately
 
 ## Preparing for PM v1
 
-**0.9.0 is a feature candidate, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
+**0.9.1 is a feature candidate, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
 
 - [v1 go/no-go and live-browser test checklist](docs/V1_LAUNCH_CHECKLIST.md)
 - [Authenticated browser QA runbook](docs/QA_RUNBOOK.md)
