@@ -9,6 +9,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+concurrency:
+  group: pm-candidate-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   package:
     runs-on: ubuntu-latest
@@ -39,6 +42,11 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin "$GITHUB_REF_NAME"
+          if [ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/$GITHUB_REF_NAME")" ]; then
+            echo "::warning::Source advanced while packaging. A newer workflow run will rebuild the installer."
+            exit 0
+          fi
           git add "docs/downloads/PM-Chrome-Extension-v${PM_VERSION}.zip"
           if ! git diff --cached --quiet; then
             git commit -m "Build reproducible PM ${PM_VERSION} installer [skip ci]"

@@ -1,7 +1,7 @@
 # PM v1.0 launch gate
 
 **State: NOT APPROVED FOR PUBLIC v1.0 RELEASE**
-**Candidate: 0.9.0**
+**Candidate: 0.9.1**
 **Prepared: November 18, 2026**
 
 Green automated tests demonstrate code paths, not authenticated ChatGPT compatibility or third-party authorization.
@@ -83,3 +83,10 @@ Keep the 0.7 installer on GitHub. Stop the run, inspect uncertain sends before m
 - [ ] One new Project chat with the exact prompt as first user message.
 - [ ] Mixed run with two existing and one new chat.
 - [ ] Uncertain new-chat send is never repeated automatically.
+
+### Background-tab / High-effort compatibility gate
+
+- [ ] With High already visible in the ChatGPT composer, PM submits once without clicking a different reasoning menu.
+- [ ] With a different effort selected, PM opens the actual effort menu, selects High, and verifies it before submitting.
+- [ ] Switch to another tab while the two-chat test runs; background tab processing either completes or pauses with a truthful actionable reason.
+- [ ] For a focused diagnostic, choose Keep current and confirm PM does not change the current effort. This does not guarantee High.

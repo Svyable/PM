@@ -85,3 +85,11 @@ Link this signed-off runbook to the v1 GO/NO-GO tracking issue. Keep the issue o
 - [ ] Existing draft in the new-chat Project composer must never be overwritten.
 - [ ] If a new-chat submission is unconfirmed, inspect the created/attempted chat before any follow-up. PM must not automatically retry it.
 - [ ] Confirm the new-chat mode does not require a full existing-chat inventory scan.
+
+## Smoke test G: background tab and effort selection (v0.9.1)
+
+- [ ] Preselect High manually in a disposable chat. Run one existing-chat dispatch with High selected and verify no unrelated model/effort control opens.
+- [ ] Preselect a different effort, then request High. Verify the picker changes to High and the exact message sends once.
+- [ ] Repeat while the PM-created chat tab remains in the background and another Chrome tab is active. Record effort result and load timings.
+- [ ] Repeat the same run with Keep current. Treat a successful send here as evidence the effort selector is the failure, not evidence of High effort.
+- [ ] If Chrome Memory Saver or Energy Saver is enabled, record that and test again with chatgpt.com allowed to stay active. Never assume a background tab has completed simply because Chrome reports it loaded.

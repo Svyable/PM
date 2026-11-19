@@ -3,7 +3,7 @@
  */
 (() => {
   'use strict';
-  const VERSION='0.9.0';
+  const VERSION='0.9.1';
   const old=globalThis.__PM_LISTENER__;
   try {
     if(old&&chrome.runtime.onMessage.hasListener?.(old)){
@@ -92,35 +92,77 @@
   }
   function effortButton(box){
     const form=box.closest('form')||box.parentElement?.parentElement;
-    const selectors=['button[data-composer-navigation-target="reasoning"]','button[data-selected-reasoning-effort]','button[data-testid="model-switcher-dropdown-button"]','button:has([class*="ModelPickerTriggerModelGroup"])','button[aria-label*="model" i][aria-haspopup]'];
-    for(const sel of selectors){
+    // Prefer the visible current-effort control. A generic reasoning/model
+    // navigation button can open a completely different picker.
+    const precise=[
+      'button:has([class*="ModelPickerTriggerModelGroup"])',
+      'button[data-selected-reasoning-effort]',
+      'button[data-testid="model-switcher-dropdown-button"]'
+    ];
+    const generic=[
+      'button[data-composer-navigation-target="reasoning"]',
+      'button[aria-label*="model" i][aria-haspopup]'
+    ];
+    for(const sel of [...precise,...generic]){
       let el=form?.querySelector(sel);if(shown(el))return el;
       el=[...document.querySelectorAll(sel)].find(shown);if(el)return el;
     }
-    return [...document.querySelectorAll('button')].find(el=>shown(el)&&/^(Instant|Medium|High|Extra High|Very High)$/i.test(norm(el.textContent)))||null;
+    return [...document.querySelectorAll('button')].find(el=>
+      shown(el)&&/^(Instant|Medium|High|Extra High|Very High)$/i.test(norm(el.textContent)))||null;
   }
   function selectedEffort(btn){
     if(!btn)return null;
-    let text=norm(btn.getAttribute('data-selected-reasoning-effort')||btn.textContent);
+    const current=btn.querySelector?.('[class*="ModelPickerTriggerModelGroup"]');
+    const text=norm(btn.getAttribute('data-selected-reasoning-effort')||current?.textContent||btn.textContent);
     const match=text.match(/(?:^|\b)(Extra[ _-]?High|Very High|Instant|Medium|High)(?:\b|$)/i);
     if(!match)return null;
     return /extra|very/i.test(match[1])?'Extra High':match[1][0].toUpperCase()+match[1].slice(1).toLowerCase();
   }
+  function optionLabel(el){
+    const aria=norm(el.getAttribute?.('aria-label'));
+    const lines=String(el.innerText||el.textContent||'').split(/\r?\n/).map(norm).filter(Boolean);
+    const title=norm(el.querySelector?.('[class*="font-medium"],[class*="font-semibold"],[data-testid*="effort-label"]')?.textContent);
+    return{aria,first:lines[0]||'',title};
+  }
+  function effortChoiceMatches(el,requested){
+    const labels=optionLabel(el),wanted=requested.toLowerCase();
+    return Object.values(labels).some(s=>s.toLowerCase()===wanted||
+      (wanted==='extra high'&&s.toLowerCase()==='very high'));
+  }
+  function effortOptions(){
+    // Only inspect actual option controls. Scanning every button on the page
+    // could select an unrelated "High" button outside the effort menu.
+    return [...document.querySelectorAll('[role="menuitem"],[role="menuitemradio"],[role="option"],[role="radio"],[data-radix-collection-item]')].filter(shown);
+  }
   async function setEffort(box,requested){
     if(requested==='Keep current')return;
     let btn=effortButton(box);
-    if(!btn)throw Object.assign(Error('Effort picker not found; try Keep current.'),{reasonCode:'effort'});
+    if(!btn)throw Object.assign(Error('Effort control not found. Use Keep current temporarily, or inspect the ChatGPT effort picker.'),{reasonCode:'effort'});
     if(selectedEffort(btn)===requested)return;
-    btn.click();await sleep(440);
-    const options=[...document.querySelectorAll('[role="menuitem"],[role="option"],[role="radio"],[data-radix-collection-item],button')].filter(shown);
-    const exact=options.find(el=>{
-      const label=norm(el.getAttribute('aria-label')||el.textContent);
-      return label.toLowerCase()===requested.toLowerCase() || (requested==='Extra High'&&label.toLowerCase()==='very high');
-    });
-    if(!exact){document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));throw Object.assign(Error('Effort option unavailable: '+requested),{reasonCode:'effort'});}
-    exact.click();await sleep(520);
-    btn=effortButton(box);
-    if(selectedEffort(btn)!==requested)throw Object.assign(Error('Could not verify '+requested+' effort after selection.'),{reasonCode:'effort'});
+    btn.click();
+    let choice=null,available=[];
+    // Background tabs can take longer to render portals/menus; do not
+    // conclude High is unavailable after an arbitrary 440 ms.
+    for(let i=0;i<28;i++){
+      await sleep(250);
+      if(selectedEffort(btn)===requested)return;
+      const options=effortOptions();
+      choice=options.find(el=>effortChoiceMatches(el,requested))||null;
+      if(choice)break;
+      if(options.length)available=[...new Set(options.map(el=>optionLabel(el).first).filter(Boolean))].slice(0,8);
+    }
+    if(!choice){
+      document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+      const detail=available.length?' Visible choices: '+available.join(', ')+'.':' No matching menu options appeared.';
+      throw Object.assign(Error('Could not find '+requested+' in ChatGPT’s effort menu.'+detail+' Nothing was sent.'),{reasonCode:'effort'});
+    }
+    choice.click();
+    for(let i=0;i<14;i++){
+      await sleep(200);
+      btn=effortButton(box);
+      if(selectedEffort(btn)===requested)return;
+    }
+    throw Object.assign(Error('Selected '+requested+' but could not verify the resulting effort setting. Nothing was sent.'),{reasonCode:'effort'});
   }
   function draftPresent(el){
     const text=norm(el.innerText||el.textContent);

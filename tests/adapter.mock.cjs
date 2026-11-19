@@ -7,17 +7,31 @@ const path=require('node:path');
 const code=fs.readFileSync(path.join(__dirname,'..','extension','content.js'),'utf8');
 const project='g-p-demo123';
 function environment(mode){
-  let handler,clicks=0,messages=[];
+  let handler,clicks=0,messages=[],menuOpen=false,effortClicks=0,wrongClicks=0;
   const location={pathname:(mode==='project'||mode.startsWith('new'))?'/g/'+project+'/project':'/g/'+project+'/c/chat-1',href:'https://chatgpt.com/',origin:'https://chatgpt.com'};
   const box={
     isConnected:true,getClientRects:()=>[{}],innerText:(mode==='draft'||mode==='newdraft')?'existing unsent draft':'',
     textContent:mode==='draft'?'existing unsent draft':'',
     focus(){},closest(){return form;}
   };
-  const form={querySelector(sel){return sel==='button[data-selected-reasoning-effort]'?effort:null;}};
+  const form={querySelector(sel){
+    if(mode==='misleading'&&sel==='button:has([class*="ModelPickerTriggerModelGroup"])')return effort;
+    if(mode==='misleading'&&sel==='button[data-composer-navigation-target="reasoning"]')return wrongNav;
+    return sel==='button[data-selected-reasoning-effort]'?effort:null;
+  }};
+  let currentEffort=mode==='picker'?'medium':'high';
   const effort={
-    isConnected:mode!=='noeffort',getClientRects:()=>[{}],textContent:'High',
-    getAttribute(k){return k==='data-selected-reasoning-effort'?'high':null;},click(){}
+    isConnected:mode!=='noeffort',getClientRects:()=>[{}],textContent:mode==='picker'?'Medium':'High',
+    getAttribute(k){return k==='data-selected-reasoning-effort'?currentEffort:null;},
+    querySelector(){return null;},
+    click(){effortClicks++;if(mode==='picker')menuOpen=true;}
+  };
+  const wrongNav={isConnected:true,getClientRects:()=>[{}],textContent:'Reasoning options',
+    getAttribute(){return null;},click(){wrongClicks++;}};
+  const highOption={
+    isConnected:true,getClientRects:()=>[{}],innerText:'High\nMore reasoning time',textContent:'High\nMore reasoning time',
+    getAttribute(){return null;},querySelector(){return null;},
+    click(){currentEffort='high';effort.textContent='High';menuOpen=false;}
   };
   const messageNodes=mode==='existingmatch'?[{isConnected:true,getClientRects:()=>[{}],innerText:'proceed methodically',querySelector(){return null;}}]:[];
   const send={
@@ -25,7 +39,7 @@ function environment(mode){
     getAttribute(k){return k==='aria-label'?'Send prompt':k==='data-testid'?'send-button':null;},
     click(){
       clicks++;box.innerText='';box.textContent='';
-      if(['chat','wrongturn','newchat','newother','newnochat'].includes(mode)){
+      if(['chat','picker','misleading','wrongturn','newchat','newother','newnochat'].includes(mode)){
         messageNodes.push({isConnected:true,getClientRects:()=>[{}],
           innerText:mode==='wrongturn'?'a different message':'proceed methodically',
           querySelector(){return null;}});
@@ -50,6 +64,7 @@ function environment(mode){
       if(selector==='button[data-testid="send-button"]')return[send];
       if(selector.includes('data-message-author-role="user"'))return messageNodes;
       if(selector==='button[data-selected-reasoning-effort]')return[effort];
+      if(selector.startsWith('[role="menuitem"]'))return menuOpen?[highOption]:[];
       return [];
     },
     querySelector(selector){
@@ -68,7 +83,7 @@ function environment(mode){
   const context={chrome,document:doc,location,URL,getComputedStyle(){return{overflowY:'auto',visibility:'visible'};},setTimeout:(fn,ms)=>setTimeout(fn,Math.min(ms,5)),clearTimeout,InputEvent:class InputEvent{constructor(){}},KeyboardEvent:class KeyboardEvent{constructor(){}},console,globalThis:{}};
   vm.runInNewContext(code,context,{filename:'content.js'});
   function receive(m){let response;handler(m,{},v=>response=v);return response;}
-  return{receive,messages,get clicks(){return clicks;}};
+  return{receive,messages,get clicks(){return clicks;},get effortClicks(){return effortClicks;},get wrongClicks(){return wrongClicks;}};
 }
 async function until(check,label,ms=2500){
   const started=Date.now();
@@ -77,7 +92,7 @@ async function until(check,label,ms=2500){
 }
 (async()=>{
   const scan=environment('project');
-  assert.equal(scan.receive({type:'PM_PING'}).version,'0.9.0');
+  assert.equal(scan.receive({type:'PM_PING'}).version,'0.9.1');
   assert.equal(scan.receive({type:'PM_SCAN',jobId:'scan1',pid:project,target:2}).accepted,true);
   await until(()=>scan.messages.some(m=>m.type==='PM_SCANNED'),'scan result');
   const found=scan.messages.find(m=>m.type==='PM_SCANNED');
@@ -123,6 +138,20 @@ async function until(check,label,ms=2500){
     assert.equal(result.ok,false);
     assert.equal(result.reasonCode,'effort');
     assert.equal(failed.clicks,0,mode+' error must not send');
+  }
+
+  for(const mode of ['picker','misleading']){
+    const test=environment(mode);
+    const token='effort-'+mode;
+    assert.equal(test.receive({type:'PM_APPLY',jobId:'job-'+mode,pid:project,
+      cid:'chat-1',attemptToken:token,prompt:'proceed methodically',effort:'High'}).accepted,true);
+    await until(()=>test.messages.some(m=>m.type==='PM_RESULT'),'effort compatibility '+mode);
+    const result=test.messages.find(m=>m.type==='PM_RESULT');
+    assert.equal(result.ok,true,mode+' should verify High and send');
+    assert.equal(result.attemptToken,token);
+    assert.equal(test.clicks,1,'one Send click');
+    if(mode==='picker')assert.equal(test.effortClicks,1,'High chosen from menu description');
+    if(mode==='misleading')assert.equal(test.wrongClicks,0,'do not click generic reasoning button instead of visible High');
   }
 
   const send=environment('chat');
