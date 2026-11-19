@@ -33,7 +33,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: PM-v${{ env.PM_VERSION }}-candidate
-          path: docs/downloads/PM-Chrome-Extension-v${PM_VERSION}.zip
+          path: docs/downloads/PM-Chrome-Extension-v${{ env.PM_VERSION }}.zip
           if-no-files-found: error
       - name: Commit generated installer
         run: |
