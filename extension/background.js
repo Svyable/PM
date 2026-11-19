@@ -181,7 +181,7 @@ async function launch(){
     }
     const item=job.queue[job.index],match=item?.url?.match(CHAT);
     if(!match||match[1]!==job.projectId||match[2]!==item.id){
-      await finish(null,{ok:false,error:'Invalid conversation link.',reasonCode:'invalid'},item);return;
+      setTimeout(()=>void finish(null,{ok:false,error:'Invalid conversation link.',reasonCode:'invalid'},item),0);return;
     }
     let tab;
     try{tab=await chrome.tabs.create({url:item.url,active:false});}
@@ -198,12 +198,14 @@ function currentOwned(j,tabId,token,cid){
   return j?.current?.tabId===tabId && j.current.attemptToken===token && j.current.chatId===cid;
 }
 async function pauseReadiness(tabId,token,cid,details){
-  const j=await load();
-  if(!currentOwned(j,tabId,token,cid)||j.status!=='running'||j.current.phase!=='waiting')return;
-  j.status='paused';
-  j.pauseReason='Chat did not become ready in '+j.config.loadTimeoutSeconds+' seconds: '+details+'. This conversation is still queued and has NOT been sent. Resume to retry this same tab.';
-  j.current.waitError=details;
-  await save(j);
+  return withJobLock(async()=>{
+    const j=await load();
+    if(!currentOwned(j,tabId,token,cid)||j.status!=='running'||j.current.phase!=='waiting')return;
+    j.status='paused';
+    j.pauseReason='Chat did not become ready in '+j.config.loadTimeoutSeconds+' seconds: '+details+'. This conversation is still queued and has NOT been sent. Resume to retry this same tab.';
+    j.current.waitError=details;
+    await save(j);
+  });
 }
 async function dispatch(tabId){
   // One readiness poller for each opened tab; no queue advancement until a
@@ -254,11 +256,15 @@ async function dispatch(tabId){
 
     // Re-read after waiting: a pause, stop, navigation or timeout may have
     // changed ownership. Never dispatch from a stale tab-load event.
-    job=await load();
-    if(job?.id!==jobId||job.status!=='running'||!currentOwned(job,tabId,token,cid)||job.current.phase!=='waiting')return;
-    job.current.phase='sending';
-    job.current.dispatchedAt=Date.now();
-    await save(job);
+    job=await withJobLock(async()=>{
+      const latest=await load();
+      if(latest?.id!==jobId||latest.status!=='running'||!currentOwned(latest,tabId,token,cid)||latest.current.phase!=='waiting')return null;
+      latest.current.phase='sending';
+      latest.current.dispatchedAt=Date.now();
+      await save(latest);
+      return latest;
+    });
+    if(!job)return;
     let delivered=false;
     try{
       const live=await load();
