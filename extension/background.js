@@ -238,7 +238,7 @@ async function begin(message,sender){
   const job={
     id:'pm-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),version:VERSION,status:'scanning',
     projectId:match[1],projectTabId:tab.id,target:cfg.target,config:cfg,
-    startedAt:Date.now(),found:0,total:0,index:0,completed:0,failed:0,scanComplete:cfg.mode==='new',scanStep:0,
+    startedAt:Date.now(),found:0,total:0,index:0,completed:0,failed:0,scanComplete:cfg.mode==='new'||cfg.mode.startsWith('fleet-'),scanStep:0,
     existingTarget:cfg.mode==='fleet-continue'?0:cfg.target-cfg.newCount,
     fleetCycle:cfg.mode==='fleet-continue'?(existingFleet.cycle||0)+1:0,newItemsAdded:false,
     current:null,queue:[],results:[],error:null,pauseReason:null,consecutiveFailures:0,nextAt:0
