@@ -100,7 +100,8 @@ function renderJob(job){
   const elapsed=pageWaiting?Math.max(0,Math.floor((Date.now()-job.current.startedAt)/1000)):0;
   const msg=job.error||job.pauseReason||
     (job.status==='scanning'?'Finding '+(job.existingTarget||job.target)+' existing conversations… '+(job.found||0)+' found.':
-    pageWaiting?'Preparing '+(job.current?.title||'conversation')+' ('+elapsed+'s / '+(job.config.loadTimeoutSeconds||180)+'s). No prompt sent yet.':
+    pageWaiting?(job.current?.waitError?job.current.waitError+' ':'Preparing '+(job.current?.title||'conversation')+'. ')+
+      'Waiting '+elapsed+'s / '+(job.config.loadTimeoutSeconds||180)+'s. No prompt sent yet.':
     job.status==='running'&&job.current?.phase==='sending'?'Prompt submitted for verification'+current+'…':
     job.status==='running'&&!job.current?'Discovered '+job.found+' chats. Waiting for more project rows or dispatch spacing…':
     job.status==='running'?'Working on chat '+Math.min((job.index||0)+1,job.target)+' of '+job.target+current:
@@ -132,7 +133,8 @@ function renderJob(job){
     if(row.error){const reason=document.createElement('div');reason.className='reason';reason.textContent=row.error;wrapper.append(reason);}
     if(Number.isFinite(row.readyWaitMs)){
       const timing=document.createElement('div');timing.className='reason';
-      timing.textContent='Page ready: '+(row.readyWaitMs/1000).toFixed(1)+'s · Verification: '+((row.confirmationWaitMs||0)/1000).toFixed(1)+'s';
+      timing.textContent='Page ready: '+(row.readyWaitMs/1000).toFixed(1)+'s · Verification: '+((row.confirmationWaitMs||0)/1000).toFixed(1)+'s'+
+        (row.routeRepairs?' · Recovered route '+row.routeRepairs+'×':'');
       wrapper.append(timing);
     }
     activity.append(wrapper);
