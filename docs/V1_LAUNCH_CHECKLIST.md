@@ -1,7 +1,7 @@
 # PM v1.0 launch gate
 
 **State: NOT APPROVED FOR PUBLIC v1.0 RELEASE**
-**Candidate: 0.9.1**
+**Candidate: 0.10.0**
 **Prepared: November 18, 2026**
 
 Green automated tests demonstrate code paths, not authenticated ChatGPT compatibility or third-party authorization.
@@ -90,3 +90,13 @@ Keep the 0.7 installer on GitHub. Stop the run, inspect uncertain sends before m
 - [ ] With a different effort selected, PM opens the actual effort menu, selects High, and verifies it before submitting.
 - [ ] Switch to another tab while the two-chat test runs; background tab processing either completes or pauses with a truthful actionable reason.
 - [ ] For a focused diagnostic, choose Keep current and confirm PM does not change the current effort. This does not guarantee High.
+
+### v0.10 native side panel / no-Reconnect gate
+
+- [ ] PM toolbar icon opens Chrome native side panel (not a small extension popup).
+- [ ] Project overview shows the small bottom-right PM launcher; it opens the same full panel on a genuine click.
+- [ ] Launch form is always accessible while running/paused; there is no Reconnect button.
+- [ ] Switching browser tabs does not require manual reconnect and does not change the queued Project.
+- [ ] If ChatGPT navigates away before Send, PM restores the original URL in the same tab at most twice, without marking a send or duplicating it.
+- [ ] For a permanently wrong route, PM pauses with an actionable reason and a Stop control.
+- [ ] Browser close/reopen and service-worker restart cannot replay an uncertain Send.
