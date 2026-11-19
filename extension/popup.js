@@ -1,10 +1,10 @@
-/* PM 0.9 — popup controls and status. No external dependencies. */
+/* PM 0.10 — popup controls and status. No external dependencies. */
 'use strict';
 const $=id=>document.getElementById(id);
 const setup=$('setup'),run=$('run'),notice=$('notice'),launchButton=$('launch');
 const panelMode=document.body.dataset.pmMode==='panel';
 const hostTabId=panelMode?Number(new URLSearchParams(location.search).get('pmTabId')):null;
-let projectTabId=null,latestJob=null,showingRun=false,working=false,manualNew=false;
+let projectTabId=null,activeProjectId=null,latestJob=null,showingRun=false,working=false,manualNew=false;
 async function message(type,extras={}){
   try{const r=await chrome.runtime.sendMessage({type,...extras});if(r?.ok===false)throw Error(r.error||'PM request failed.');return r;}
   catch(e){throw Error(String(e.message||e));}
@@ -16,25 +16,27 @@ function inform(s){
 function statusConnection(ok,desc){
   $('connectionDot').className='signal '+(ok?'good':'bad');
   $('connectionMessage').textContent=desc;
-  launchButton.disabled=!ok;
+  launchButton.disabled=!ok || (latestJob&&['scanning','running','paused'].includes(latestJob.status));
 }
 async function inspect(){
-  statusConnection(false,'Connecting to ChatGPT Project…');
   try{
-    const tab=panelMode&&Number.isInteger(hostTabId)&&hostTabId>0
-      ?await chrome.tabs.get(hostTabId)
-      :(await chrome.tabs.query({active:true,currentWindow:true}))[0];
-    if(!tab?.url||!/^https:\/\/chatgpt\.com\/g\/g-p-[a-zA-Z0-9-]+\/project\/?(?:[?#].*)?$/.test(tab.url)){
-      projectTabId=null;
+    const context=await message('PM_FIND_PROJECT',{
+      preferredTabId:projectTabId||(Number.isInteger(hostTabId)?hostTabId:null)
+    });
+    if(!context.tabId||!context.projectId){
+      projectTabId=null;activeProjectId=null;
       statusConnection(false,'Open a ChatGPT Project overview');
       return;
     }
-    const r=await message('PM_INSPECT_CONTEXT',{tabId:tab.id});
-    if(!r.context?.projectId)throw Error('Not a project overview.');
-    projectTabId=tab.id;
-    statusConnection(true,'ChatGPT Project detected');
-    inform('');
-  }catch(e){projectTabId=null;statusConnection(false,'Connection failed — click Reconnect');inform(String(e.message||e));}
+    const switched=projectTabId!==context.tabId||activeProjectId!==context.projectId;
+    projectTabId=context.tabId;activeProjectId=context.projectId;
+    statusConnection(true,'Project connected automatically');
+    if(switched){inform('');}
+  }catch(e){
+    // Project detection is self-healing. Recheck automatically rather than
+    // requiring a user-triggered Reconnect to recover from a transient error.
+    statusConnection(false,'Looking for a Project…');
+  }
 }
 function showRunMode(value){
   showingRun=value;setup.hidden=panelMode?false:value;run.hidden=!value;
@@ -140,8 +142,10 @@ async function refresh(){
   if(working)return;
   try{
     const r=await message('PM_GET_JOB');
-    if(r.job&&!manualNew&&(!showingRun||['running','scanning','paused'].includes(r.job.status)))showRunMode(true);
-    if(r.job&&showingRun)renderJob(r.job);
+    const relevant=r.job&&r.job.projectId===activeProjectId;
+    if(relevant&&!manualNew&&(!showingRun||['running','scanning','paused'].includes(r.job.status)))showRunMode(true);
+    if(relevant&&showingRun)renderJob(r.job);
+    if(!relevant&&panelMode){showRunMode(false);latestJob=null;}
   }catch(e){if(showingRun)inform(String(e.message||e));}
 }
 async function change(type){
@@ -168,9 +172,9 @@ $('launchForm').addEventListener('submit',async e=>{
   working=true;launchButton.disabled=true;inform('');
   try{await message('PM_START',{tabId:projectTabId,config});manualNew=false;showRunMode(true);await refreshJobNow();}
   catch(err){inform(String(err.message||err));await refreshJobNow().catch(()=>{});}
-  finally{working=false;launchButton.disabled=projectTabId===null;}
+  finally{working=false;launchButton.disabled=!projectTabId||!!(latestJob&&['scanning','running','paused'].includes(latestJob.status));}
 });
-$('reconnect').addEventListener('click',()=>void inspect());
+// Project detection runs automatically; no Reconnect button or manual ritual.
 $('pause').addEventListener('click',()=>void change('PM_PAUSE'));
 $('resume').addEventListener('click',()=>void change('PM_RESUME'));
 $('stop').addEventListener('click',()=>void change('PM_STOP'));
@@ -187,4 +191,5 @@ $('export').addEventListener('click',()=>{
   document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
 });
 void(async()=>{await Promise.all([preferences(),inspect()]);await refresh();})();
-setInterval(()=>void refresh(),1200);
+setInterval(()=>void refresh(),1500);
+setInterval(()=>void inspect(),3000);
