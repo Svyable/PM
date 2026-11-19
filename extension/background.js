@@ -134,6 +134,7 @@ async function inspect(tabId){
   return{ok:true,context:status};
 }
 async function begin(message,sender){
+  return withJobLock(async()=>{
   if(!sender?.url?.startsWith('chrome-extension://'))throw Error('PM must be launched from its popup.');
   const prior=await load();
   if(prior&&['running','scanning','paused'].includes(prior.status))throw Error('A run is already active. Stop or finish it first.');
@@ -156,6 +157,7 @@ async function begin(message,sender){
     await save(job);await clearWatchdog();throw Error(job.error);
   }
   return{ok:true,jobId:job.id};
+  });
 }
 let launchBusy=false;
 let jobLockTail=Promise.resolve();
