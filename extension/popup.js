@@ -1,7 +1,9 @@
-/* PM 0.6 — popup controls and status. No external dependencies. */
+/* PM 0.7 — popup controls and status. No external dependencies. */
 'use strict';
 const $=id=>document.getElementById(id);
 const setup=$('setup'),run=$('run'),notice=$('notice'),launchButton=$('launch');
+const panelMode=document.body.dataset.pmMode==='panel';
+const hostTabId=panelMode?Number(new URLSearchParams(location.search).get('pmTabId')):null;
 let projectTabId=null,latestJob=null,showingRun=false,working=false,manualNew=false;
 async function message(type,extras={}){
   try{const r=await chrome.runtime.sendMessage({type,...extras});if(r?.ok===false)throw Error(r.error||'PM request failed.');return r;}
@@ -19,8 +21,9 @@ function statusConnection(ok,desc){
 async function inspect(){
   statusConnection(false,'Connecting to ChatGPT Project…');
   try{
-    const tabs=await chrome.tabs.query({active:true,currentWindow:true});
-    const tab=tabs[0];
+    const tab=panelMode&&Number.isInteger(hostTabId)&&hostTabId>0
+      ?await chrome.tabs.get(hostTabId)
+      :(await chrome.tabs.query({active:true,currentWindow:true}))[0];
     if(!tab?.url||!/^https:\/\/chatgpt\.com\/g\/g-p-[a-zA-Z0-9-]+\/project\/?(?:[?#].*)?$/.test(tab.url)){
       projectTabId=null;
       statusConnection(false,'Open a ChatGPT Project overview');
@@ -34,7 +37,7 @@ async function inspect(){
   }catch(e){projectTabId=null;statusConnection(false,'Connection failed — click Reconnect');inform(String(e.message||e));}
 }
 function showRunMode(value){
-  showingRun=value;setup.hidden=value;run.hidden=!value;
+  showingRun=value;setup.hidden=panelMode?false:value;run.hidden=!value;
 }
 function setField(id,v){if(v!==undefined&&v!==null)$(id).value=v;}
 async function preferences(){
@@ -66,6 +69,7 @@ function renderJob(job){
   $('percentage').textContent=Math.floor(100*ratio)+'%';
   $('progressBar').style.width=(100*ratio)+'%';
   $('state').textContent=resultLabel(job);
+  if(panelMode){launchButton.disabled=['scanning','running','paused'].includes(job.status)||!projectTabId;}
   $('state').className='state '+(['done'].includes(job.status)?'done':['error','stopped'].includes(job.status)?'error':'');
   $('sent').textContent=job.completed||0;
   $('failed').textContent=job.failed||0;
@@ -74,10 +78,12 @@ function renderJob(job){
   const pageWaiting=job.status==='running'&&job.current?.phase==='waiting';
   const elapsed=pageWaiting?Math.max(0,Math.floor((Date.now()-job.current.startedAt)/1000)):0;
   const msg=job.error||job.pauseReason||
-    (job.status==='scanning'?'Discovered '+(job.found||0)+' conversations so far…':
-    pageWaiting?'Waiting for '+(job.current.title||'conversation')+' to load ('+elapsed+'s / '+(job.config.loadTimeoutSeconds||180)+'s). No prompt has been sent yet.':
-    job.status==='running'?'Working on chat '+Math.min((job.index||0)+1,job.total)+' of '+job.total+current:
-    job.status==='done'?'Finished. Review the results before launching another run.':
+    (job.status==='scanning'?'Scanning project… '+(job.found||0)+' chats discovered. Streaming dispatch begins as soon as the first batch arrives.':
+    pageWaiting?'Checking chat '+Math.min(job.index+1,job.target)+' — '+(job.current.title||'conversation')+' ('+elapsed+'s / '+(job.config.loadTimeoutSeconds||180)+'s). No prompt sent yet.':
+    job.status==='running'&&job.current?.phase==='sending'?'Prompt submitted for verification'+current+'…':
+    job.status==='running'&&!job.current?'Discovered '+job.found+' chats. Waiting for more project rows or dispatch spacing…':
+    job.status==='running'?'Working on chat '+Math.min((job.index||0)+1,job.target)+' of '+job.target+current:
+    job.status==='done'?'Finished. Review verified sends and uncertain attempts.':
     job.status==='stopped'?'Remaining conversations were not launched.':'Review recent activity.');
   $('runMessage').textContent=msg;
   $('pause').hidden=job.status!=='running';
@@ -86,7 +92,7 @@ function renderJob(job){
   $('newRun').hidden=!['done','stopped','error'].includes(job.status);
   const activity=$('activity');activity.replaceChildren();
   const rows=(job.results||[]).slice(-18).reverse();
-  if(!rows.length){const empty=document.createElement('div');empty.className='empty';empty.textContent=job.status==='scanning'?'Discovering project conversations…':'No completed chat attempts yet.';activity.append(empty);}
+  if(!rows.length){const empty=document.createElement('div');empty.className='empty';empty.textContent=job.status==='scanning'?'Scanning the project list…':job.current?.phase==='waiting'?'Waiting for '+(job.current.title||'the first chat')+' to become ready. No Send attempt yet.':job.current?.phase==='sending'?'Verifying the current chat. No result recorded yet.':'No sends recorded yet. See LIVE DISPATCH above for the current stage.';activity.append(empty);}
   for(const row of rows){
     const wrapper=document.createElement('div');wrapper.className='activityRow';
     const line=document.createElement('div');line.className='rowtop';
