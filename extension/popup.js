@@ -49,7 +49,10 @@ async function preferences(){
     const p=r.prefs||{};
     setField('target',p.target||10);setField('prompt',p.prompt||'proceed methodically');
     setField('mode',p.mode||'existing');setField('newCount',p.newCount||1);
-    setField('fleetTemplate',p.fleetTemplate||'brainswarm');setField('mission',p.mission||'');
+    setField('fleetTemplate',p.fleetTemplate||'brainswarm');
+    // A mission belongs to its Project, not to a global preference. Do not
+    // carry a previous Project's mission into the next one automatically.
+    setField('mission','');lastMode=p.mode||'existing';
     setField('effort',p.effort||'High');setField('delay',p.delaySeconds||4);setField('loadTimeout',p.loadTimeoutSeconds||180);
     $('keepTabs').checked=p.keepTabs!==false;markPreset();updateMode();
   }catch(e){inform(String(e.message||e));}
@@ -178,7 +181,9 @@ function renderJob(job){
         'Preparing submission')+current+(job.current.stageDetail?' · '+job.current.stageDetail:'')+'…':
     job.status==='running'&&!job.current?'Discovered '+job.found+' chats. Waiting for more project rows or dispatch spacing…':
     job.status==='running'?'Working on chat '+Math.min((job.index||0)+1,job.target)+' of '+job.target+current:
-    job.status==='done'?'Finished. Review verified sends and uncertain attempts.':
+    job.status==='done'?(job.config.mode==='fleet-start'?'Fleet seeded: '+job.completed+' verified specialist threads. Use Continue fleet next.':
+      job.config.mode==='fleet-continue'?'Fleet continuation complete: '+job.completed+' workstreams advanced.':
+      'Finished. Review verified sends and uncertain attempts.'):
     job.status==='stopped'?'Remaining conversations were not launched.':'Review recent activity.');
   $('runMessage').textContent=msg;
   $('pause').hidden=job.status!=='running';
@@ -280,3 +285,6 @@ $('export').addEventListener('click',()=>{
 void(async()=>{await Promise.all([preferences(),inspect()]);await refresh();})();
 setInterval(()=>void refresh(),1500);
 setInterval(()=>void inspect(),3000);
+setInterval(()=>{
+  if($('mode').value.startsWith('fleet-')&&projectTabId)void fetchFleet();
+},15000);
