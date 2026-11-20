@@ -1,8 +1,8 @@
 # PM / Proceed Methodically
 
-**One prompt. Many conversations.** PM is a local-first Chrome extension that initiates a user-selected prompt across existing conversations in a ChatGPT Project.
+**One mission. A fleet of specialized conversations.** PM is a local-first Chrome extension that can initialize a ChatGPT Project with role-specific threads, continue a saved fleet, or dispatch a single prompt across selected existing conversations.
 
-[**Download PM v0.9.0 (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.10.1.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
+[**Download PM v0.11.0 candidate (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.11.0.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
 
 ## Install
 
@@ -10,7 +10,7 @@
 2. Open `chrome://extensions` in Chrome, Brave, or another compatible Chromium browser.
 3. Enable **Developer mode** and click **Load unpacked**.
 4. Select the extracted **`extension/` folder** containing `manifest.json`.
-5. **Reload your existing ChatGPT Project tab** after installing or updating the extension. On its overview page (ending in `/project`), PM now docks on the **right side**. Try **1 conversation** first.
+5. **Reload your existing ChatGPT Project tab** after installing or updating the extension. On its overview page (ending in `/project`), click the PM toolbar icon or the small lower-right PM launcher to open Chrome's native side panel. Try **1 conversation** first.
 
 No PM service account, backend, or telemetry.
 
@@ -37,6 +37,21 @@ The launch form is always visible in the full panel, even when a run is paused; 
 If ChatGPT changes route **before** Send, PM tries restoring the originally queued conversation in the same tab up to twice, without marking it sent or moving the queue. The fail-closed logic still pauses if it cannot verify the correct route, and **never** retries an uncertain click.
 
 **Upgrade:** stop any run created by an earlier PM version; load PM 0.10 unpacked at `chrome://extensions`, and refresh your Project page. Click the PM toolbar icon or the bottom-right on-page launcher.
+
+## PM Project Fleets (v0.11)
+
+PM now begins with the **Project mission**, not merely the number of copies of one prompt. Choose **Seed a project fleet** in the Chrome side panel, pick one of four blueprints, and define the mission. PM creates role-specific new conversations inside the selected Project and records the successful chat-to-role mappings in Chrome local storage.
+
+- **Business Model Lab:** opportunity, customers, unit economics, competitive intelligence, go-to-market, investor/red-team.
+- **Scientific Research Lab:** hypotheses, provenance, experiments, statistics, replication, synthesis.
+- **Math Proof Engine:** formalization, examples, lemmas, counterexamples, proof attempts, proof audit.
+- **Brainswarm:** systems architecture, exploration, execution, adversarial critique, evidence, integration.
+
+Choose **Continue a saved project fleet** to reenter those *same mapped conversations* with individualized next-step instructions. Larger fleets use distinct tracks/waves, not 100 identical prompts. You create the ChatGPT Project through ChatGPT first; PM seeds and continues that selected Project.
+
+**This is parallel work, not magical cross-chat communication.** PM cannot claim sibling conversations share live memory, nor automatically integrate their answers. Templates ask for explicit human-readable cross-thread handoffs. See the [Fleet User Guide](docs/FLEETS.md).
+
+**Submission reliability (0.11):** PM no longer writes directly to ProseMirror's DOM if its native insertion fails. It resolves the real Send control and reports *injected, submitting, verifying*. If no send button is detectable, it makes one Enter attempt; a disabled Send remains a failure and any unconfirmed submission is never auto-retried.
 
 ## Continue existing threads or start new ones (v0.9)
 
@@ -79,10 +94,11 @@ PM **streams the first discovered chat batch into the dispatch queue immediately
 
 ## Preparing for PM v1
 
-**0.10.1 is a feature candidate, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
+**0.11.0 is a feature candidate, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
 
 - [v1 go/no-go and live-browser test checklist](docs/V1_LAUNCH_CHECKLIST.md)
 - [Authenticated browser QA runbook](docs/QA_RUNBOOK.md)
+- [Project Fleet templates and role-based continuation](docs/FLEETS.md)
 - [Privacy and data-handling disclosure](docs/privacy.html)
 - [Chrome Web Store listing and permission justifications](docs/STORE_LISTING_DRAFT.md)
 

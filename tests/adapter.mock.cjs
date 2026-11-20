@@ -7,12 +7,20 @@ const path=require('node:path');
 const code=fs.readFileSync(path.join(__dirname,'..','extension','content.js'),'utf8');
 const project='g-p-demo123';
 function environment(mode){
-  let handler,clicks=0,messages=[],menuOpen=false,effortClicks=0,wrongClicks=0;
+  let handler,clicks=0,messages=[],menuOpen=false,effortClicks=0,wrongClicks=0,enterKeys=0;
   const location={pathname:(mode==='project'||mode.startsWith('new'))?'/g/'+project+'/project':'/g/'+project+'/c/chat-1',href:'https://chatgpt.com/',origin:'https://chatgpt.com'};
   const box={
     isConnected:true,getClientRects:()=>[{}],innerText:(mode==='draft'||mode==='newdraft')?'existing unsent draft':'',
     textContent:mode==='draft'?'existing unsent draft':'',
-    focus(){},closest(){return form;}
+    focus(){},closest(){return form;},
+    dispatchEvent(event){
+      if(mode==='sendMissing'&&event.key==='Enter'&&event.type==='keydown'){
+        enterKeys++;this.innerText='';this.textContent='';
+        messageNodes.push({isConnected:true,getClientRects:()=>[{}],
+          innerText:'proceed methodically',querySelector(){return null;}});
+      }
+      return true;
+    }
   };
   const form={querySelector(sel){
     if(mode==='misleading'&&sel==='button:has([class*="ModelPickerTriggerModelGroup"])')return effort;
@@ -35,7 +43,7 @@ function environment(mode){
   };
   const messageNodes=mode==='existingmatch'?[{isConnected:true,getClientRects:()=>[{}],innerText:'proceed methodically',querySelector(){return null;}}]:[];
   const send={
-    isConnected:true,getClientRects:()=>[{}],disabled:false,
+    isConnected:true,getClientRects:()=>[{}],disabled:mode==='sendDisabled',
     getAttribute(k){return k==='aria-label'?'Send prompt':k==='data-testid'?'send-button':null;},
     click(){
       clicks++;box.innerText='';box.textContent='';
@@ -60,8 +68,8 @@ function environment(mode){
     querySelectorAll(selector){
       if(mode==='project'&&selector.includes('a[href*="/c/"]'))return anchors;
       if(selector.startsWith('.ProseMirror'))return[box];
-      if(selector==='button')return[effort,send];
-      if(selector==='button[data-testid="send-button"]')return[send];
+      if(selector==='button')return mode==='sendMissing'?[effort]:[effort,send];
+      if(selector==='button[data-testid="send-button"]')return mode==='sendMissing'?[]:[send];
       if(selector.includes('data-message-author-role="user"'))return messageNodes;
       if(selector==='button[data-selected-reasoning-effort]')return[effort];
       if(selector.startsWith('[role="menuitem"]'))return menuOpen?[highOption]:[];
@@ -71,7 +79,11 @@ function environment(mode){
       if(selector.startsWith('li['))return anchors[0]||null;
       return null;
     },
-    execCommand(cmd,ui,text){assert.equal(cmd,'insertText');box.innerText=text;box.textContent=text;return true;},
+    execCommand(cmd,ui,text){
+      assert.equal(cmd,'insertText');
+      if(mode==='insertReject')return false;
+      box.innerText=text;box.textContent=text;return true;
+    },
     dispatchEvent(){}
   };
   const chrome={
@@ -80,10 +92,10 @@ function environment(mode){
       async sendMessage(msg){messages.push(msg);return{ok:true};}
     }
   };
-  const context={chrome,document:doc,location,URL,getComputedStyle(){return{overflowY:'auto',visibility:'visible'};},setTimeout:(fn,ms)=>setTimeout(fn,Math.min(ms,5)),clearTimeout,InputEvent:class InputEvent{constructor(){}},KeyboardEvent:class KeyboardEvent{constructor(){}},console,globalThis:{}};
+  const context={chrome,document:doc,location,URL,getComputedStyle(){return{overflowY:'auto',visibility:'visible'};},setTimeout:(fn,ms)=>setTimeout(fn,Math.min(ms,5)),clearTimeout,InputEvent:class InputEvent{constructor(){}},KeyboardEvent:class KeyboardEvent{constructor(type,options){this.type=type;Object.assign(this,options);}},console,globalThis:{}};
   vm.runInNewContext(code,context,{filename:'content.js'});
   function receive(m){let response;handler(m,{},v=>response=v);return response;}
-  return{receive,messages,get clicks(){return clicks;},get effortClicks(){return effortClicks;},get wrongClicks(){return wrongClicks;}};
+  return{receive,messages,get clicks(){return clicks;},get effortClicks(){return effortClicks;},get wrongClicks(){return wrongClicks;},get enterKeys(){return enterKeys;}};
 }
 async function until(check,label,ms=2500){
   const started=Date.now();
@@ -92,7 +104,7 @@ async function until(check,label,ms=2500){
 }
 (async()=>{
   const scan=environment('project');
-  assert.equal(scan.receive({type:'PM_PING'}).version,'0.10.1');
+  assert.equal(scan.receive({type:'PM_PING'}).version,'0.11.0');
   assert.equal(scan.receive({type:'PM_SCAN',jobId:'scan1',pid:project,target:2}).accepted,true);
   await until(()=>scan.messages.some(m=>m.type==='PM_SCANNED'),'scan result');
   const found=scan.messages.find(m=>m.type==='PM_SCANNED');
@@ -163,6 +175,35 @@ async function until(check,label,ms=2500){
     if(mode==='picker')assert.equal(test.effortClicks,1,'High chosen from menu description');
     if(mode==='misleading')assert.equal(test.wrongClicks,0,'do not click generic reasoning button instead of visible High');
   }
+
+  // Regression for reported stuck drafts: input must be committed as a real
+  // editor transaction; raw DOM textContent changes are never considered Send.
+  const rejected=environment('insertReject');
+  rejected.receive({type:'PM_APPLY',jobId:'input-reject',pid:project,cid:'chat-1',
+    attemptToken:'input-token',prompt:'proceed methodically',effort:'High'});
+  await until(()=>rejected.messages.some(m=>m.type==='PM_RESULT'),'editor transaction rejection');
+  assert.equal(rejected.messages.find(m=>m.type==='PM_RESULT').reasonCode,'composer');
+  assert.equal(rejected.clicks,0);
+
+  const disabled=environment('sendDisabled');
+  disabled.receive({type:'PM_APPLY',jobId:'send-disabled',pid:project,cid:'chat-1',
+    attemptToken:'disabled-token',prompt:'proceed methodically',effort:'High'});
+  await until(()=>disabled.messages.some(m=>m.type==='PM_RESULT'),'disabled send diagnosis');
+  assert.equal(disabled.messages.find(m=>m.type==='PM_RESULT').reasonCode,'send-disabled');
+  assert.equal(disabled.clicks,0);
+  assert.equal(disabled.messages.find(m=>m.type==='PM_RESULT').submitMethod,null);
+  assert.equal(disabled.enterKeys,0,'must not press Enter when visible Send is disabled');
+
+  const enter=environment('sendMissing');
+  enter.receive({type:'PM_APPLY',jobId:'enter-one-shot',pid:project,cid:'chat-1',
+    attemptToken:'enter-token',prompt:'proceed methodically',effort:'High'});
+  await until(()=>enter.messages.some(m=>m.type==='PM_RESULT'),'one-shot Enter fallback');
+  assert.equal(enter.messages.find(m=>m.type==='PM_RESULT').ok,true);
+  assert.equal(enter.enterKeys,1,'exactly one Enter fallback');
+  assert.equal(enter.messages.find(m=>m.type==='PM_RESULT').submitMethod,'enter');
+  assert.equal(enter.clicks,0);
+  const stages=enter.messages.filter(m=>m.type==='PM_STAGE').map(m=>m.phase);
+  assert.ok(stages.includes('injected')&&stages.includes('submitting')&&stages.includes('verifying'));
 
   const send=environment('chat');
   assert.equal(send.receive({type:'PM_READY',pid:project,cid:'chat-1'}).ready,true);

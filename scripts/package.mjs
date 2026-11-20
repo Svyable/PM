@@ -20,7 +20,7 @@ const name='PM-Chrome-Extension-v'+manifest.version+'.zip';
 const files=[
   'manifest.json','background.js','content.js',
   'popup.html','popup.css','popup.js',
-  'project-panel.js','panel.html','panel.css','panel.js',
+  'project-panel.js','panel.html','panel.css','panel.js','fleets.js',
   'icons/icon16.png','icons/icon32.png','icons/icon48.png','icons/icon128.png',
   'INSTALL.txt'
 ];

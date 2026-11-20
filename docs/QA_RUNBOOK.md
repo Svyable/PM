@@ -107,3 +107,13 @@ Link this signed-off runbook to the v1 GO/NO-GO tracking issue. Keep the issue o
 - [ ] After using the Project launcher, switch to an unrelated Chrome tab; verify the PM side panel stays open in the same browser window (global window-scoped panel).
 
 - [ ] Opening PM from the Project page creates a global, window-wide side panel that remains open when the user switches Chrome tabs.
+
+## Smoke test I: fleet launch + submit engine (v0.11)
+
+- [ ] Create a disposable Project in ChatGPT, then select Seed a project fleet from PM side panel.
+- [ ] Try Business Model Lab at size 1; verify message appears as a submitted first user turn in a new conversation, not merely in the editor.
+- [ ] Try size 3 on another disposable Project; verify roles differ and all resulting chat IDs are distinct.
+- [ ] Continue that fleet; ensure original conversation IDs receive individualized continuation prompts.
+- [ ] Verify fast background-tab operation while doing other work. Observe injected/submitting/verifying phase labels.
+- [ ] Force Send disabled or hide it in developer tools on a disposable chat; check PM fails closed or performs at most one Enter, never two gestures.
+- [ ] Check the export contains verified/uncertain records only, without invented cooperation or cross-chat message access.

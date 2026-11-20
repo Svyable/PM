@@ -1,14 +1,15 @@
-/* PM — Proceed Methodically 0.10.1 | Chrome MV3 coordinator
+/* PM — Proceed Methodically 0.11 | Chrome MV3 coordinator
  * Single bounded queue; never retries an uncertain send.
  */
 'use strict';
-const VERSION='0.10.1', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
+importScripts('fleets.js');
+const VERSION='0.11.0', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
 const PROJECT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/project\/?(?:[?#].*)?$/;
 const CHAT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/c\/([a-zA-Z0-9-]+)\/?$/;
-const DEFAULTS={mode:'existing',newCount:1,target:10,prompt:'proceed methodically',effort:'High',delaySeconds:4,loadTimeoutSeconds:180,keepTabs:true};
+const DEFAULTS={mode:'existing',newCount:1,target:6,prompt:'proceed methodically',mission:'',fleetTemplate:'brainswarm',effort:'High',delaySeconds:2,loadTimeoutSeconds:180,keepTabs:true};
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
-const CATALOG='pmCatalog', VISITS='pmVisits';
+const CATALOG='pmCatalog', VISITS='pmVisits', FLEETS='pmProjectFleets';
 const projectFromUrl=url=>String(url||'').match(PROJECT)?.[1]||null;
 const chatFromUrl=url=>{
   const match=String(url||'').split(/[?#]/)[0].match(CHAT);
@@ -98,18 +99,62 @@ async function save(job){
 async function watchdog(){try{await chrome.alarms.create(ALARM,{periodInMinutes:.5});}catch{}}
 async function clearWatchdog(){try{await chrome.alarms.clear(ALARM);}catch{}}
 function validate(raw){
-  const target=Number(raw?.target),prompt=String(raw?.prompt||'').trim(),effort=String(raw?.effort||'High'),delaySeconds=Number(raw?.delaySeconds);
-  const mode=String(raw?.mode||'existing');
-  if(!['existing','new','mixed'].includes(mode))throw Error('Choose a valid thread strategy.');
-  const newCount=mode==='new'?target:mode==='existing'?0:Number(raw?.newCount);
-  if(mode==='mixed'&&(!Number.isInteger(newCount)||newCount<1||newCount>=target))throw Error('Mixed mode needs 1–'+(target-1)+' new threads and at least one existing thread.');
-  if(!Number.isInteger(target)||target<1||target>1000)throw Error('Choose 1 to 1,000 conversations.');
-  if(!prompt||prompt.length>16000)throw Error('The prompt must contain 1 to 16,000 characters.');
+  const target=Number(raw?.target),mode=String(raw?.mode||'existing');
+  const prompt=String(raw?.prompt||'').trim(),effort=String(raw?.effort||'High');
+  const mission=String(raw?.mission||'').trim(),fleetTemplate=String(raw?.fleetTemplate||'brainswarm');
+  const delaySeconds=Number(raw?.delaySeconds);
+  if(!['existing','new','mixed','fleet-start','fleet-continue'].includes(mode))
+    throw Error('Choose a valid project dispatch strategy.');
+  if(!Number.isInteger(target)||target<1||target>1000)throw Error('Choose 1–1,000 conversations.');
+  const newCount=mode==='new'||mode==='fleet-start'?target:mode==='existing'||mode==='fleet-continue'?0:Number(raw?.newCount);
+  if(mode==='mixed'&&(!Number.isInteger(newCount)||newCount<1||newCount>=target))
+    throw Error('Mixed mode requires at least one existing and one new thread.');
+  if(!['fleet-start','fleet-continue'].includes(mode)&&(!prompt||prompt.length>16000))
+    throw Error('The prompt must contain 1–16,000 characters.');
+  if(mode.startsWith('fleet-')){
+    if(!globalThis.PMFleet?.get(fleetTemplate))throw Error('Choose a known fleet template.');
+    if(mode==='fleet-start'&&(!mission||mission.length>4000))throw Error('Enter a Project mission of 1–4,000 characters.');
+    if(mission.length>4000)throw Error('Project mission is too long.');
+  }
   if(!['Instant','Medium','High','Extra High','Keep current'].includes(effort))throw Error('Unsupported effort.');
   const loadTimeoutSeconds=Number(raw?.loadTimeoutSeconds??180);
-  if(!Number.isFinite(loadTimeoutSeconds)||loadTimeoutSeconds<30||loadTimeoutSeconds>600)throw Error('Page readiness timeout must be 30–600 seconds.');
-  if(!Number.isFinite(delaySeconds)||delaySeconds<2||delaySeconds>60)throw Error('Spacing must be between 2 and 60 seconds.');
-  return{target,mode,newCount,prompt,effort,delaySeconds,loadTimeoutSeconds,keepTabs:raw.keepTabs!==false};
+  if(!Number.isFinite(loadTimeoutSeconds)||loadTimeoutSeconds<30||loadTimeoutSeconds>600)
+    throw Error('Page readiness timeout must be 30–600 seconds.');
+  if(!Number.isFinite(delaySeconds)||delaySeconds<2||delaySeconds>60)
+    throw Error('Spacing must be between 2 and 60 seconds.');
+  return{target,mode,newCount,prompt,mission,fleetTemplate,effort,delaySeconds,
+    loadTimeoutSeconds,keepTabs:raw.keepTabs!==false};
+}
+async function fleetRecord(pid){
+  return (await chrome.storage.local.get(FLEETS))[FLEETS]?.[pid]||null;
+}
+let fleetWriteSequence=Promise.resolve();
+function recordFleetSuccess(job,item,row){
+  if(!row.ok||!job.config?.mode?.startsWith('fleet-'))return Promise.resolve();
+  const write=async()=>{
+    const all=(await chrome.storage.local.get(FLEETS))[FLEETS]||{};
+    const existing=all[job.projectId]||{
+      templateId:job.config.fleetTemplate,mission:job.config.mission,
+      createdAt:Date.now(),cycle:0,threads:[]
+    };
+    if(existing.templateId!==job.config.fleetTemplate)
+      throw Error('Fleet template mismatch; refusing to alter project fleet ledger.');
+    if(job.config.mode==='fleet-start'){
+      if(!existing.threads.some(thread=>thread.id===row.id)){
+        existing.threads.push({id:row.id,url:row.url,roleId:item.roleId,
+          roleName:item.roleName,slot:item.slot,title:item.title,createdAt:Date.now()});
+      }
+    }else{
+      existing.cycle=Math.max(existing.cycle,job.fleetCycle||1);
+      if(job.config.mission)existing.mission=job.config.mission;
+    }
+    existing.updatedAt=Date.now();
+    all[job.projectId]=existing;
+    await chrome.storage.local.set({[FLEETS]:all});
+  };
+  const next=fleetWriteSequence.then(write,write);
+  fleetWriteSequence=next.catch(()=>{});
+  return next;
 }
 // New threads are created only by submitting in the Project overview composer.
 // Synthetic IDs are queue identities, never pretend to be real ChatGPT IDs.
@@ -117,8 +162,13 @@ function appendNewThreads(job){
   if(job.newItemsAdded)return;
   const count=Number(job.config.newCount)||0;
   const base='https://chatgpt.com/g/'+job.projectId+'/project';
+  const fleet=job.config.mode==='fleet-start'
+    ?globalThis.PMFleet.plan(job.config.fleetTemplate,job.config.mission,count):null;
   for(let i=0;i<count;i++){
-    job.queue.push({kind:'new',id:'new:'+i,url:base,title:'New conversation #'+(i+1)});
+    const role=fleet?.[i];
+    job.queue.push({kind:'new',id:'new:'+i,url:base,slot:i,
+      title:role?.title||'New conversation #'+(i+1),
+      ...(role?{roleId:role.roleId,roleName:role.roleName,prompt:role.prompt}:{} )});
   }
   job.newItemsAdded=true;
   job.total=job.queue.length;
@@ -179,20 +229,37 @@ async function begin(message,sender){
   if(!match)throw Error('Open a ChatGPT Project overview before launching PM.');
   const a=await adapter(tab.id);
   if(a.projectId!==match[1])throw Error('Wrong project tab; refresh and retry.');
+  const existingFleet=cfg.mode.startsWith('fleet-')?await fleetRecord(match[1]):null;
+  if(cfg.mode==='fleet-start'&&existingFleet?.threads?.length)
+    throw Error('This Project already has a PM fleet. Choose Continue fleet, or use a new ChatGPT Project.');
+  if(cfg.mode==='fleet-continue'&&(!existingFleet?.threads?.length||existingFleet.templateId!==cfg.fleetTemplate))
+    throw Error('No matching fleet recorded for this Project. Seed a fleet here first.');
+  if(cfg.mode==='fleet-continue'){
+    cfg.mission=cfg.mission||existingFleet.mission;
+    cfg.target=Math.min(cfg.target,existingFleet.threads.length);
+  }
   const job={
     id:'pm-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),version:VERSION,status:'scanning',
     projectId:match[1],projectTabId:tab.id,target:cfg.target,config:cfg,
-    startedAt:Date.now(),found:0,total:0,index:0,completed:0,failed:0,scanComplete:cfg.mode==='new',scanStep:0,
-    existingTarget:cfg.target-cfg.newCount,newItemsAdded:false,
+    startedAt:Date.now(),found:0,total:0,index:0,completed:0,failed:0,scanComplete:cfg.mode==='new'||cfg.mode.startsWith('fleet-'),scanStep:0,
+    existingTarget:cfg.mode==='fleet-continue'?0:cfg.target-cfg.newCount,
+    fleetCycle:cfg.mode==='fleet-continue'?(existingFleet.cycle||0)+1:0,newItemsAdded:false,
     current:null,queue:[],results:[],error:null,pauseReason:null,consecutiveFailures:0,nextAt:0
   };
-  if(cfg.mode==='new'){
+  if(cfg.mode==='new'||cfg.mode==='fleet-start'){
     appendNewThreads(job);
     job.status='running';
+  }else if(cfg.mode==='fleet-continue'){
+    job.queue=existingFleet.threads.slice(0,cfg.target).map(thread=>{
+      const role=globalThis.PMFleet.compose(cfg.fleetTemplate,cfg.mission,thread.slot,'continue',job.fleetCycle);
+      return {kind:'existing',id:thread.id,url:thread.url,title:role.title,
+        roleId:thread.roleId,roleName:thread.roleName,slot:thread.slot,prompt:role.prompt};
+    });
+    job.total=job.queue.length;job.status='running';
   }
   await chrome.storage.local.set({[PREF]:cfg});await save(job);await watchdog();
-  if(cfg.mode==='new'){
-    // No project chat scan is needed to create new conversations.
+  if(cfg.mode==='new'||cfg.mode.startsWith('fleet-')){
+    // Fleet runs are already fully defined: no project chat scan needed.
     setTimeout(()=>void launch(),0);
   }else{
     try{
@@ -329,7 +396,7 @@ async function dispatch(tabId){
       const ack=await chrome.tabs.sendMessage(tabId,{
         type:'PM_APPLY',jobId,pid,cid,attemptToken:token,
         kind:job.queue[job.index]?.kind==='new'?'new':'existing',
-        prompt:job.config.prompt,effort:job.config.effort
+        prompt:job.queue[job.index]?.prompt||job.config.prompt,effort:job.config.effort
       });
       if(ack?.accepted===false){delivered=false;throw Error(ack.reason||'Chat was not ready for the prompt.');}
       if(!ack?.accepted)throw Error('Could not confirm that the chat adapter accepted this dispatch.');
@@ -406,10 +473,14 @@ async function finish(tabId,result,explicit=null){
       error:result.ok?null:error(result.error),at:Date.now(),
       readyWaitMs:j.current?.dispatchedAt?Math.max(0,j.current.dispatchedAt-j.current.startedAt):null,
       confirmationWaitMs:j.current?.dispatchedAt?Math.max(0,Date.now()-j.current.dispatchedAt):null,
-      routeRepairs:j.current?.routeRepairs||0};
+      routeRepairs:j.current?.routeRepairs||0,
+      submitMethod:['button','enter'].includes(result.submitMethod)?result.submitMethod:null};
     j.results.push(row);
     if(row.ok&&row.kind==='new'){
       void updateCatalog(j.projectId,[{id:row.id,url:row.url,title:row.title}],false);
+    }
+    if(row.ok&&j.config.mode.startsWith('fleet-')){
+      await recordFleetSuccess(j,item,row);
     }
     if(j.results.length>1000)j.results.shift();
     if(row.ok){j.completed++;j.consecutiveFailures=0;}
@@ -499,6 +570,15 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
     await updateCatalog(pid,[],false,{scanning:true,step:0});
     return{ok:true};
   })());
+  if(m.type==='PM_GET_FLEET')return reply(popup?(async()=>{
+    const tab=await chrome.tabs.get(m.tabId),pid=projectFromUrl(tab.url);
+    if(!pid)throw Error('Select a Project overview first.');
+    const record=await fleetRecord(pid);
+    return{ok:true,projectId:pid,fleet:record?{
+      templateId:record.templateId,mission:record.mission,cycle:record.cycle||0,
+      threads:(record.threads||[]).map(t=>({id:t.id,roleName:t.roleName,title:t.title,url:t.url,slot:t.slot}))
+    }:null};
+  })():Promise.reject(Error('Extension panel only.')));
   if(m.type==='PM_GET_PREFS')return reply(chrome.storage.local.get(PREF).then(r=>({ok:true,prefs:r[PREF]||DEFAULTS})));
   if(m.type==='PM_INSPECT_CONTEXT')return reply(popup?inspect(m.tabId):Promise.reject(Error('Popup only.')));
   if(m.type==='PM_START')return reply(begin(m,s));
@@ -558,6 +638,17 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
       {scanning:m.type!=='PM_INVENTORY_DONE',step:Number(m.step)||0});
     return{ok:true};
   })());
+  if(m.type==='PM_STAGE')return reply((async()=>{
+    const j=await load();
+    if(j?.id!==m.jobId||j.current?.tabId!==s.tab?.id||
+       j.current.chatId!==m.chatId||j.current.attemptToken!==m.attemptToken)return{ok:false};
+    const accepted=['preparing','injected','submitting','verifying'];
+    if(!accepted.includes(m.phase))return{ok:false};
+    j.current.stage=m.phase;j.current.stageDetail=error(m.detail||'');
+    j.current.stageAt=Date.now();
+    await save(j);
+    return{ok:true};
+  })());
   if(m.type==='PM_RESULT')return reply((async()=>{
     const j=await load();
     if(j?.id!==m.jobId||j.current?.tabId!==s.tab?.id||j.current.chatId!==m.chatId||j.current.attemptToken!==m.attemptToken||j.current.phase!=='sending')return{ok:false};
@@ -571,7 +662,7 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
       }
     }
     await finish(s.tab.id,{ok:verified,uncertain,reasonCode,error:errorText,
-      createdChatId:m.createdChatId,createdUrl:m.createdUrl});
+      submitMethod:m.submitMethod,createdChatId:m.createdChatId,createdUrl:m.createdUrl});
     return{ok:true};
   })());
 });

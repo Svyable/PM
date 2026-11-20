@@ -1,10 +1,11 @@
-/* PM 0.10 — popup controls and status. No external dependencies. */
+/* PM 0.11 — popup controls and status. No external dependencies. */
 'use strict';
 const $=id=>document.getElementById(id);
 const setup=$('setup'),run=$('run'),notice=$('notice'),launchButton=$('launch');
 const panelMode=document.body.dataset.pmMode==='panel';
 const hostTabId=panelMode?Number(new URLSearchParams(location.search).get('pmTabId')):null;
 let projectTabId=null,activeProjectId=null,latestJob=null,showingRun=false,working=false,manualNew=false;
+let fleetDetails=null,lastMode='existing';
 async function message(type,extras={}){
   try{const r=await chrome.runtime.sendMessage({type,...extras});if(r?.ok===false)throw Error(r.error||'PM request failed.');return r;}
   catch(e){throw Error(String(e.message||e));}
@@ -29,9 +30,13 @@ async function inspect(){
       return;
     }
     const switched=projectTabId!==context.tabId||activeProjectId!==context.projectId;
+    const oldProjectId=activeProjectId;
     projectTabId=context.tabId;activeProjectId=context.projectId;
     statusConnection(true,'Project connected automatically');
-    if(switched){inform('');}
+    if(switched){
+      if(oldProjectId&&oldProjectId!==context.projectId)$('mission').value='';
+      fleetDetails=null;inform('');void fetchFleet();
+    }
   }catch(e){
     // Project detection is self-healing. Recheck automatically rather than
     // requiring a user-triggered Reconnect to recover from a transient error.
@@ -48,6 +53,10 @@ async function preferences(){
     const p=r.prefs||{};
     setField('target',p.target||10);setField('prompt',p.prompt||'proceed methodically');
     setField('mode',p.mode||'existing');setField('newCount',p.newCount||1);
+    setField('fleetTemplate',p.fleetTemplate||'brainswarm');
+    // A mission belongs to its Project, not to a global preference. Do not
+    // carry a previous Project's mission into the next one automatically.
+    setField('mission','');lastMode=p.mode||'existing';
     setField('effort',p.effort||'High');setField('delay',p.delaySeconds||4);setField('loadTimeout',p.loadTimeoutSeconds||180);
     $('keepTabs').checked=p.keepTabs!==false;markPreset();updateMode();
   }catch(e){inform(String(e.message||e));}
@@ -55,8 +64,92 @@ async function preferences(){
 function markPreset(){
   document.querySelectorAll('[data-count]').forEach(b=>b.classList.toggle('chosen',Number(b.dataset.count)===Number($('target').value)));
 }
+async function fetchFleet(){
+  if(!projectTabId)return;
+  try{
+    const project=activeProjectId;
+    const r=await message('PM_GET_FLEET',{tabId:projectTabId});
+    if(project!==activeProjectId)return;
+    fleetDetails=r.fleet||null;
+    updateMode();
+  }catch{fleetDetails=null;updateMode();}
+}
+function updateFleetPreview(){
+  const preview=$('fleetPreview');
+  if(!preview)return;
+  const choice=$('fleetTemplate').value;
+  const template=globalThis.PMFleet?.get(choice);
+  preview.replaceChildren();
+  if(!template)return;
+  const count=Math.max(1,Math.min(Number($('target').value)||6,1000));
+  const listed=globalThis.PMFleet.list().find(t=>t.id===choice);
+  const names=listed?.roles||[];
+  const header=document.createElement('p');
+  header.className='smallnote';
+  header.textContent=Number($('target').value)>names.length
+    ?names.length+' distinct roles across '+Math.ceil(count/names.length)+' independent tracks.'
+    :count+' distinct role assignments. Each receives a different prompt.';
+  preview.append(header);
+  for(let i=0;i<Math.min(count,12);i++){
+    const role=names[i%names.length];
+    if(!role)break;
+    const chip=document.createElement('span');
+    chip.className='fleetRole';
+    chip.textContent=(i+1)+'. '+role.name+(i>=names.length?' · Track '+(Math.floor(i/names.length)+1):'');
+    preview.append(chip);
+  }
+  if(count>12){
+    const more=document.createElement('span');more.className='fleetMore';
+    more.textContent='+'+(count-12)+' additional independent tracks';preview.append(more);
+  }
+  const board=$('fleetWorkstreams');
+  if(!board)return;
+  board.replaceChildren();
+  if(!fleetDetails?.threads?.length)return;
+  const heading=document.createElement('h4');
+  heading.textContent='Saved specialist workstreams';
+  board.append(heading);
+  for(const thread of fleetDetails.threads.slice(0,30)){
+    const link=document.createElement('a');
+    if(!/^https:\/\/chatgpt\.com\/g\/g-p-[a-zA-Z0-9-]+\/c\/[a-zA-Z0-9-]+\/?$/.test(thread.url||''))continue;
+    link.href=thread.url;link.target='_blank';link.rel='noopener noreferrer';
+    link.textContent=(thread.roleName||thread.title||'Specialist')+' ↗';
+    link.title='Open mapped specialist conversation in ChatGPT';
+    board.append(link);
+  }
+  if(fleetDetails.threads.length>30){
+    const more=document.createElement('small');
+    more.textContent='Showing 30 of '+fleetDetails.threads.length+' mapped chats';
+    board.append(more);
+  }
+}
 function updateMode(){
   const mode=$('mode').value,total=Number($('target').value)||1;
+  const fleetMode=mode==='fleet-start'||mode==='fleet-continue';
+  $('fleetSetup').hidden=!fleetMode;
+  $('singlePromptBlock').hidden=fleetMode;
+  $('prompt').required=!fleetMode;
+  $('mission').required=mode==='fleet-start';
+  if(mode==='fleet-continue'&&fleetDetails){
+    $('fleetTemplate').value=fleetDetails.templateId;
+    if(!$('mission').value.trim())$('mission').value=fleetDetails.mission||'';
+  }
+  $('fleetTemplate').disabled=mode==='fleet-continue'&&!!fleetDetails;
+  $('launch').textContent=mode==='fleet-start'?'✳ Seed project fleet':
+    mode==='fleet-continue'?'↻ Continue project fleet':'↗ Launch PM';
+  if(fleetMode){
+    const status=$('fleetStatus');
+    if(mode==='fleet-continue'){
+      status.textContent=fleetDetails
+        ?'Linked '+fleetDetails.threads.length+' workstreams · '+(fleetDetails.cycle||0)+' continuation cycles. Threads retain their assigned roles.'
+        :'No fleet linked to this Project yet. Choose Seed a project fleet first.';
+    }else{
+      status.textContent=fleetDetails?.threads?.length
+        ?'This Project already has a saved fleet. Choose Continue fleet instead.'
+        :'Each role receives its own assignment. PM records the resulting chat links for future continuation.';
+    }
+    updateFleetPreview();
+  }
   const mixed=mode==='mixed';
   $('splitRow').hidden=!mixed;
   $('newCount').required=mixed;
@@ -70,6 +163,8 @@ function updateMode(){
   }
   $('modeHelp').textContent=mode==='new'
     ?'Each new conversation starts in this Project with the instruction as its first message.'
+    :mode==='fleet-start'?'Describe one mission. PM creates independent, role-specific conversations in the current Project.'
+    :mode==='fleet-continue'?'PM returns to the chats created by this template, keeping each original role.'
     :mixed?'Continue existing chats first, then create the selected number of new Project chats.'
     :'Send the instruction to conversations already in this Project.';
 }
@@ -102,10 +197,17 @@ function renderJob(job){
     (job.status==='scanning'?'Finding '+(job.existingTarget||job.target)+' existing conversations… '+(job.found||0)+' found.':
     pageWaiting?(job.current?.waitError?job.current.waitError+' ':'Preparing '+(job.current?.title||'conversation')+'. ')+
       'Waiting '+elapsed+'s / '+(job.config.loadTimeoutSeconds||180)+'s. No prompt sent yet.':
-    job.status==='running'&&job.current?.phase==='sending'?'Prompt submitted for verification'+current+'…':
+    job.status==='running'&&job.current?.phase==='sending'
+      ?(job.current.stage==='injected'?'Prompt injected. Finding the Send control':
+        job.current.stage==='preparing'?'Preparing composer':
+        job.current.stage==='submitting'?'Submission gesture in progress':
+        job.current.stage==='verifying'?'Submission attempted. Verifying new user message':
+        'Preparing submission')+current+(job.current.stageDetail?' · '+job.current.stageDetail:'')+'…':
     job.status==='running'&&!job.current?'Discovered '+job.found+' chats. Waiting for more project rows or dispatch spacing…':
     job.status==='running'?'Working on chat '+Math.min((job.index||0)+1,job.target)+' of '+job.target+current:
-    job.status==='done'?'Finished. Review verified sends and uncertain attempts.':
+    job.status==='done'?(job.config.mode==='fleet-start'?'Fleet seeded: '+job.completed+' verified specialist threads. Use Continue fleet next.':
+      job.config.mode==='fleet-continue'?'Fleet continuation complete: '+job.completed+' workstreams advanced.':
+      'Finished. Review verified sends and uncertain attempts.'):
     job.status==='stopped'?'Remaining conversations were not launched.':'Review recent activity.');
   $('runMessage').textContent=msg;
   $('pause').hidden=job.status!=='running';
@@ -134,6 +236,7 @@ function renderJob(job){
     if(Number.isFinite(row.readyWaitMs)){
       const timing=document.createElement('div');timing.className='reason';
       timing.textContent='Page ready: '+(row.readyWaitMs/1000).toFixed(1)+'s · Verification: '+((row.confirmationWaitMs||0)/1000).toFixed(1)+'s'+
+        (row.submitMethod?' · Sent via '+(row.submitMethod==='button'?'Send button':'Enter fallback'):' · No submit gesture')+
         (row.routeRepairs?' · Recovered route '+row.routeRepairs+'×':'');
       wrapper.append(timing);
     }
@@ -163,11 +266,15 @@ $('launchForm').addEventListener('submit',async e=>{
   e.preventDefault();if(!projectTabId||working)return;
   const config={
     target:Number($('target').value),mode:$('mode').value,
-    newCount:Number($('newCount').value),prompt:$('prompt').value.trim(),effort:$('effort').value,
+    newCount:Number($('newCount').value),prompt:$('prompt').value.trim(),
+    mission:$('mission').value.trim(),fleetTemplate:$('fleetTemplate').value,effort:$('effort').value,
     delaySeconds:Number($('delay').value),loadTimeoutSeconds:Number($('loadTimeout').value),keepTabs:$('keepTabs').checked
   };
   if(!Number.isInteger(config.target)||config.target<1||config.target>1000){inform('Choose 1–1,000 conversations.');return;}
-  if(!config.prompt||config.prompt.length>16000){inform('Enter a prompt of 1–16,000 characters.');return;}
+  if(!config.mode.startsWith('fleet-')&&(!config.prompt||config.prompt.length>16000)){inform('Enter a prompt of 1–16,000 characters.');return;}
+  if(config.mode==='fleet-start'&&(!config.mission||config.mission.length>4000)){inform('Enter a Project mission (up to 4,000 characters).');return;}
+  if(config.mode==='fleet-continue'&&!fleetDetails?.threads?.length){inform('This Project has no saved PM fleet. Seed a fleet first.');return;}
+  if(config.mode==='fleet-start'&&fleetDetails?.threads?.length){inform('A fleet already exists here. Choose Continue fleet or create another Project.');return;}
   if(config.mode==='mixed'&&(config.target<2||config.newCount<1||config.newCount>=config.target)){
     inform('Mixed mode needs at least one existing and one new conversation.');return;
   }
@@ -182,7 +289,15 @@ $('resume').addEventListener('click',()=>void change('PM_RESUME'));
 $('stop').addEventListener('click',()=>void change('PM_STOP'));
 $('newRun').addEventListener('click',()=>{manualNew=true;showRunMode(false);inform('');});
 $('target').addEventListener('input',()=>{markPreset();updateMode();});
-$('mode').addEventListener('change',updateMode);
+$('mode').addEventListener('change',()=>{
+  if($('mode').value==='fleet-start'&&!lastMode.startsWith('fleet-'))$('target').value=6;
+  if($('mode').value==='fleet-continue'&&fleetDetails?.threads?.length)$('target').value=fleetDetails.threads.length;
+  lastMode=$('mode').value;
+  updateMode();
+  if($('mode').value.startsWith('fleet-'))void fetchFleet();
+});
+$('fleetTemplate').addEventListener('change',updateMode);
+$('mission').addEventListener('input',()=>{if($('mode').value.startsWith('fleet-'))updateFleetPreview();});
 $('newCount').addEventListener('input',updateMode);
 document.querySelectorAll('[data-count]').forEach(b=>b.addEventListener('click',()=>{$('target').value=b.dataset.count;markPreset();updateMode();}));
 $('export').addEventListener('click',()=>{
@@ -195,3 +310,6 @@ $('export').addEventListener('click',()=>{
 void(async()=>{await Promise.all([preferences(),inspect()]);await refresh();})();
 setInterval(()=>void refresh(),1500);
 setInterval(()=>void inspect(),3000);
+setInterval(()=>{
+  if($('mode').value.startsWith('fleet-')&&projectTabId)void fetchFleet();
+},15000);

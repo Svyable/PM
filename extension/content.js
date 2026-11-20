@@ -1,9 +1,9 @@
-/* PM — Proceed Methodically 0.10 | ChatGPT UI adapter
+/* PM — Proceed Methodically 0.11 | ChatGPT UI adapter
  * Operates only on visible browser UI. No private endpoints or remote telemetry.
  */
 (() => {
   'use strict';
-  const VERSION='0.10.1';
+  const VERSION='0.11.0';
   const old=globalThis.__PM_LISTENER__;
   try {
     if(old&&chrome.runtime.onMessage.hasListener?.(old)){
@@ -171,11 +171,51 @@
   function isBusy(){
     return [...document.querySelectorAll('button')].some(b=>shown(b)&&(/stop generating|stop response/i.test(b.getAttribute('aria-label')||'')||/stop-button/i.test(b.getAttribute('data-testid')||'')));
   }
-  function sendButton(){
-    const selectors=['button[data-testid="send-button"]','button[aria-label="Send prompt"]','button[aria-label="Send message"]','button[aria-label="Send"]','button[data-testid*="send" i]'];
-    for(const s of selectors){const b=[...document.querySelectorAll(s)].find(shown);if(b)return b;}
-    return [...document.querySelectorAll('button')].find(b=>shown(b)&&/^send( message| prompt)?$/i.test(norm(b.getAttribute('aria-label')||b.textContent)))||null;
+  function sendButton(box){
+    const form=box?.closest?.('form');
+    const selectors=[
+      'button[data-testid="send-button"]',
+      'button[data-testid="composer-send-button"]',
+      'button[data-testid="composer-submit-button"]',
+      'button[data-testid="chat-send-button"]',
+      'button[aria-label="Send prompt"]',
+      'button[aria-label="Send message"]',
+      'button[aria-label="Send"]',
+      'button[data-testid*="send" i]',
+      'button[data-testid*="submit" i]'
+    ];
+    // Prefer the actual composer form. ChatGPT pages can have unrelated
+    // buttons with "Send" in the title or accessibility label.
+    for(const root of [form,document].filter(Boolean)){
+      for(const selector of selectors){
+        const candidate=[...(root.querySelectorAll?.(selector)||[])].find(shown);
+        if(candidate)return candidate;
+      }
+      const buttons=[...(root.querySelectorAll?.('button')||[])].filter(shown);
+      const label=buttons.find(b=>/^send( message| prompt)?$/i.test(norm(b.getAttribute('aria-label')||b.textContent)));
+      if(label)return label;
+      if(root===form){
+        const submit=buttons.find(b=>b.getAttribute('type')==='submit'&&!/stop|cancel/i.test(norm(b.getAttribute('aria-label'))));
+        if(submit)return submit;
+      }
+    }
+    return null;
   }
+  function sendAvailable(button){
+    return !!(button&&shown(button)&&!button.disabled&&
+      button.getAttribute('aria-disabled')!=='true'&&
+      button.getAttribute('data-disabled')!=='true');
+  }
+  function sendDiagnostic(box){
+    const form=box?.closest?.('form');
+    const buttons=[...(form?.querySelectorAll?.('button')||document.querySelectorAll('button'))]
+      .filter(shown).slice(0,14);
+    return buttons.map(b=>norm([
+      b.getAttribute('data-testid'),b.getAttribute('aria-label'),
+      b.getAttribute('type'),b.disabled?'disabled':''
+    ].filter(Boolean).join(' / '))).filter(Boolean).slice(0,8).join('; ').slice(0,400);
+  }
+
   function userMessages(){
     return [...document.querySelectorAll('[data-message-author-role="user"],[data-testid="user-message"]')].filter(shown);
   }
@@ -205,7 +245,8 @@
       return;
     }
     if(activeApply!==null){await report('PM_RESULT',{jobId,chatId:cid,attemptToken,...fail('busy','PM is already handling this tab.')});return;}
-    activeApply=jobId;let clicked=false;
+    activeApply=jobId;let clicked=false,submitMethod=null;
+    const stage=(phase,detail='')=>report('PM_STAGE',{jobId,chatId:cid,attemptToken,phase,detail});
     try{
       let box=null;
       for(let i=0;i<90;i++){if(stopApply)throw Error('Aborted');box=composer();if(box)break;await sleep(300);}
@@ -217,16 +258,27 @@
       // ChatGPT may navigate while its effort picker opens. Re-check before
       // typing so a late route change never populates the wrong conversation.
       if(!routeMatches())throw Object.assign(Error('Chat changed during effort selection; no prompt was inserted or sent.'),{reasonCode:'wrong-chat'});
-      box.focus();const inserted=document.execCommand('insertText',false,prompt);
-      if(!inserted||norm(box.innerText||box.textContent)!==norm(prompt)){
-        if(draftPresent(box)&&norm(box.innerText||box.textContent)!==norm(prompt))throw Object.assign(Error('Composer contained unexpected text; not sending.'),{reasonCode:'composer'});
-        box.textContent=prompt;box.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:prompt}));
+      await stage('preparing','Composer is ready; inserting prompt.');
+      box.focus();
+      // Never mutate .textContent as a fallback: it can display text without
+      // updating ProseMirror's internal state, leaving Send permanently disabled.
+      const inserted=document.execCommand('insertText',false,prompt);
+      if(!inserted||norm(box.innerText||box.textContent)!==norm(prompt))
+        throw Object.assign(Error('The editor did not accept a proper text input transaction. Nothing was sent.'),{reasonCode:'composer'});
+      await stage('injected','Prompt entered; resolving the enabled Send control.');
+      let send=null,seenButton=null;
+      // Wait for framework state and the send control to update; unlike direct
+      // DOM mutations, execCommand fires native input processing in the editor.
+      for(let i=0;i<40;i++){
+        send=sendButton(box);
+        if(send)seenButton=send;
+        if(sendAvailable(send))break;
+        if(stopApply)throw Error('Aborted before Send.');
+        await sleep(175);
       }
-      await sleep(240);
-      if(norm(box.innerText||box.textContent)!==norm(prompt))throw Object.assign(Error('Prompt insertion could not be verified.'),{reasonCode:'composer'});
-      let send=null;
-      for(let i=0;i<18;i++){send=sendButton();if(send&&!send.disabled&&send.getAttribute('aria-disabled')!=='true')break;await sleep(180);}
-      if(!send||send.disabled||send.getAttribute('aria-disabled')==='true')throw Object.assign(Error('Send button not ready. Prompt left in the composer.'),{reasonCode:'send'});
+      if(send&&!sendAvailable(send)){
+        throw Object.assign(Error('Send remained disabled after prompt entry. Nothing was clicked. Visible controls: '+sendDiagnostic(box)),{reasonCode:'send-disabled'});
+      }
       if(stopApply)throw Error('Aborted before send.');
       if(!routeMatches()){
         // The editor was empty before PM typed. Remove only the exact PM text
@@ -241,7 +293,25 @@
       // New project chat must not accidentally resolve to an already-visible
       // conversation when the UI navigates after submission.
       const knownBefore=creating?new Set(findChats(pid).map(row=>row.id)):new Set();
-      clicked=true;send.click(); // exactly one click; never automatically repeat it
+      // A single submission gesture per attempt. Never click both a button
+      // and Enter, and NEVER repeat if confirmation is slow or ambiguous.
+      clicked=true;
+      const method=send?'button':'enter';
+      submitMethod=method;
+      await stage('submitting',method==='button'?'Clicking Send once.':'Send control not found; trying Enter once.');
+      if(send){
+        send.click();
+      }else{
+        // Some ChatGPT composer revisions render an unlabeled send icon or
+        // rely on Enter. A single Enter event is a best-effort last resort.
+        // Its outcome is UNCONFIRMED unless a NEW matching user turn appears.
+        box.focus();
+        const ev={key:'Enter',code:'Enter',which:13,keyCode:13,bubbles:true,cancelable:true,
+          ctrlKey:false,metaKey:false,shiftKey:false};
+        box.dispatchEvent(new KeyboardEvent('keydown',ev));
+        box.dispatchEvent(new KeyboardEvent('keyup',ev));
+      }
+      await stage('verifying','Submission attempted via '+method+'; checking for the new user message.');
       let confirmed=false;
       for(let i=0;i<60;i++){
         await sleep(320);
@@ -254,12 +324,12 @@
         }
         if(stopApply)break; // even on stop, a clicked send can have been accepted
       }
-      if(!confirmed)throw Object.assign(Error('Send clicked but no new matching user message appeared. Check the chat before retrying; it may have sent.'),{reasonCode:'unconfirmed'});
+      if(!confirmed)throw Object.assign(Error('Submission attempted but no new matching user message appeared. Inspect this conversation before trying again; it may have sent.'),{reasonCode:'unconfirmed'});
       const created=creating?chatId():null;
-      await report('PM_RESULT',{jobId,chatId:cid,attemptToken,ok:true,reasonCode:'sent',
+      await report('PM_RESULT',{jobId,chatId:cid,attemptToken,ok:true,reasonCode:'sent',submitMethod,
         ...(creating?{createdChatId:created.chatId,createdUrl:location.origin+'/g/'+pid+'/c/'+created.chatId}:{})});
     }catch(e){
-      await report('PM_RESULT',{jobId,chatId:cid,attemptToken,...fail(e.reasonCode||'error',String(e.message||e),clicked)});
+      await report('PM_RESULT',{jobId,chatId:cid,attemptToken,submitMethod,...fail(e.reasonCode||'error',String(e.message||e),clicked)});
     }finally{activeApply=null;}
   }
   const listener=(message,sender,sendResponse)=>{

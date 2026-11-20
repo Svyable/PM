@@ -1,7 +1,7 @@
 # PM v1.0 launch gate
 
 **State: NOT APPROVED FOR PUBLIC v1.0 RELEASE**
-**Candidate: 0.10.1**
+**Candidate: 0.11.0**
 **Prepared: November 18, 2026**
 
 Green automated tests demonstrate code paths, not authenticated ChatGPT compatibility or third-party authorization.
@@ -102,3 +102,14 @@ Keep the 0.7 installer on GitHub. Stop the run, inspect uncertain sends before m
 - [ ] Browser close/reopen and service-worker restart cannot replay an uncertain Send.
 
 - [ ] Opening PM from the Project page creates a global, window-wide side panel that remains open when the user switches Chrome tabs.
+
+### Fleet seeding and continuation acceptance (0.11)
+
+- [ ] Seed one chat in a disposable Project from a fleet mission, verify the exact first user message and correct Project ID.
+- [ ] Seed three roles with unique prompts and distinct newly created ChatGPT conversation IDs.
+- [ ] Continue the same three roles in the exact saved conversations; confirm differentiated continuation assignments.
+- [ ] A failed or uncertain new-chat send must not be entered into the successful role ledger.
+- [ ] No duplicate seeding in a Project that already has a saved fleet.
+- [ ] Prompt appears in composer, Send becomes enabled, and exactly one submission gesture occurs with a visible confirmed user message.
+- [ ] If Send remains disabled, PM does not attempt Enter or falsely report success.
+- [ ] If Send is absent, only one Enter fallback is attempted and no ambiguous submission is automatically retried.
