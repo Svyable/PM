@@ -245,7 +245,7 @@
       return;
     }
     if(activeApply!==null){await report('PM_RESULT',{jobId,chatId:cid,attemptToken,...fail('busy','PM is already handling this tab.')});return;}
-    activeApply=jobId;let clicked=false;
+    activeApply=jobId;let clicked=false,submitMethod=null;
     const stage=(phase,detail='')=>report('PM_STAGE',{jobId,chatId:cid,attemptToken,phase,detail});
     try{
       let box=null;
@@ -297,6 +297,7 @@
       // and Enter, and NEVER repeat if confirmation is slow or ambiguous.
       clicked=true;
       const method=send?'button':'enter';
+      submitMethod=method;
       await stage('submitting',method==='button'?'Clicking Send once.':'Send control not found; trying Enter once.');
       if(send){
         send.click();
@@ -325,10 +326,10 @@
       }
       if(!confirmed)throw Object.assign(Error('Submission attempted but no new matching user message appeared. Inspect this conversation before trying again; it may have sent.'),{reasonCode:'unconfirmed'});
       const created=creating?chatId():null;
-      await report('PM_RESULT',{jobId,chatId:cid,attemptToken,ok:true,reasonCode:'sent',
+      await report('PM_RESULT',{jobId,chatId:cid,attemptToken,ok:true,reasonCode:'sent',submitMethod,
         ...(creating?{createdChatId:created.chatId,createdUrl:location.origin+'/g/'+pid+'/c/'+created.chatId}:{})});
     }catch(e){
-      await report('PM_RESULT',{jobId,chatId:cid,attemptToken,...fail(e.reasonCode||'error',String(e.message||e),clicked)});
+      await report('PM_RESULT',{jobId,chatId:cid,attemptToken,submitMethod,...fail(e.reasonCode||'error',String(e.message||e),clicked)});
     }finally{activeApply=null;}
   }
   const listener=(message,sender,sendResponse)=>{
