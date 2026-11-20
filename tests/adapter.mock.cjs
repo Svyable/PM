@@ -191,6 +191,7 @@ async function until(check,label,ms=2500){
   await until(()=>disabled.messages.some(m=>m.type==='PM_RESULT'),'disabled send diagnosis');
   assert.equal(disabled.messages.find(m=>m.type==='PM_RESULT').reasonCode,'send-disabled');
   assert.equal(disabled.clicks,0);
+  assert.equal(disabled.messages.find(m=>m.type==='PM_RESULT').submitMethod,null);
   assert.equal(disabled.enterKeys,0,'must not press Enter when visible Send is disabled');
 
   const enter=environment('sendMissing');
@@ -199,6 +200,7 @@ async function until(check,label,ms=2500){
   await until(()=>enter.messages.some(m=>m.type==='PM_RESULT'),'one-shot Enter fallback');
   assert.equal(enter.messages.find(m=>m.type==='PM_RESULT').ok,true);
   assert.equal(enter.enterKeys,1,'exactly one Enter fallback');
+  assert.equal(enter.messages.find(m=>m.type==='PM_RESULT').submitMethod,'enter');
   assert.equal(enter.clicks,0);
   const stages=enter.messages.filter(m=>m.type==='PM_STAGE').map(m=>m.phase);
   assert.ok(stages.includes('injected')&&stages.includes('submitting')&&stages.includes('verifying'));
