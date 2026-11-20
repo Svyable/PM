@@ -473,7 +473,8 @@ async function finish(tabId,result,explicit=null){
       error:result.ok?null:error(result.error),at:Date.now(),
       readyWaitMs:j.current?.dispatchedAt?Math.max(0,j.current.dispatchedAt-j.current.startedAt):null,
       confirmationWaitMs:j.current?.dispatchedAt?Math.max(0,Date.now()-j.current.dispatchedAt):null,
-      routeRepairs:j.current?.routeRepairs||0};
+      routeRepairs:j.current?.routeRepairs||0,
+      submitMethod:['button','enter'].includes(result.submitMethod)?result.submitMethod:null};
     j.results.push(row);
     if(row.ok&&row.kind==='new'){
       void updateCatalog(j.projectId,[{id:row.id,url:row.url,title:row.title}],false);
@@ -661,7 +662,7 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
       }
     }
     await finish(s.tab.id,{ok:verified,uncertain,reasonCode,error:errorText,
-      createdChatId:m.createdChatId,createdUrl:m.createdUrl});
+      submitMethod:m.submitMethod,createdChatId:m.createdChatId,createdUrl:m.createdUrl});
     return{ok:true};
   })());
 });
