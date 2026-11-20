@@ -144,7 +144,10 @@ function recordFleetSuccess(job,item,row){
         existing.threads.push({id:row.id,url:row.url,roleId:item.roleId,
           roleName:item.roleName,slot:item.slot,title:item.title,createdAt:Date.now()});
       }
-    }else existing.cycle=Math.max(existing.cycle,job.fleetCycle||1);
+    }else{
+      existing.cycle=Math.max(existing.cycle,job.fleetCycle||1);
+      if(job.config.mission)existing.mission=job.config.mission;
+    }
     existing.updatedAt=Date.now();
     all[job.projectId]=existing;
     await chrome.storage.local.set({[FLEETS]:all});
