@@ -102,6 +102,26 @@ function updateFleetPreview(){
     const more=document.createElement('span');more.className='fleetMore';
     more.textContent='+'+(count-12)+' additional independent tracks';preview.append(more);
   }
+  const board=$('fleetWorkstreams');
+  if(!board)return;
+  board.replaceChildren();
+  if(!fleetDetails?.threads?.length)return;
+  const heading=document.createElement('h4');
+  heading.textContent='Saved specialist workstreams';
+  board.append(heading);
+  for(const thread of fleetDetails.threads.slice(0,30)){
+    const link=document.createElement('a');
+    if(!/^https:\/\/chatgpt\.com\/g\/g-p-[a-zA-Z0-9-]+\/c\/[a-zA-Z0-9-]+\/?$/.test(thread.url||''))continue;
+    link.href=thread.url;link.target='_blank';link.rel='noopener noreferrer';
+    link.textContent=(thread.roleName||thread.title||'Specialist')+' ↗';
+    link.title='Open mapped specialist conversation in ChatGPT';
+    board.append(link);
+  }
+  if(fleetDetails.threads.length>30){
+    const more=document.createElement('small');
+    more.textContent='Showing 30 of '+fleetDetails.threads.length+' mapped chats';
+    board.append(more);
+  }
 }
 function updateMode(){
   const mode=$('mode').value,total=Number($('target').value)||1;
