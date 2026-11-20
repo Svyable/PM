@@ -88,3 +88,17 @@ body[data-pm-mode="panel"] .fleetWizard textarea:focus-visible{
   body[data-pm-mode="panel"] .fleetPreview{gap:8px}
   body[data-pm-mode="panel"] .fleetRole{font-size:11px}
 }
+
+
+.fleetWorkstreams{display:grid;grid-template-columns:1fr;gap:5px;padding-top:7px}
+.fleetWorkstreams h4{margin:7px 0 4px;color:#dbe3ff;font-size:11px;letter-spacing:.02em}
+.fleetWorkstreams a{
+  display:block;padding:8px 9px;border:1px solid #314363;border-radius:8px;
+  background:#101d32;color:#9dcbff;text-decoration:none;font-size:10px;line-height:1.3
+}
+.fleetWorkstreams a:hover,.fleetWorkstreams a:focus-visible{
+  background:#243454;border-color:#6886c5;color:#e5eaff
+}
+.fleetWorkstreams small{color:#8f9bb8;padding:5px}
+@media(min-width:620px){.fleetWorkstreams{grid-template-columns:repeat(2,minmax(0,1fr))}
+.fleetWorkstreams h4,.fleetWorkstreams small{grid-column:1/-1}}
