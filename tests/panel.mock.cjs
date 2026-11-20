@@ -43,6 +43,7 @@ function environment(route){
   assert.ok(html.includes('id="target"')&&html.includes('id="loadTimeout"'));
   assert.ok(html.includes('value="fleet-start"')&&html.includes('value="fleet-continue"'));
   assert.ok(html.includes('id="fleetTemplate"')&&html.includes('id="mission"')&&html.includes('id="fleetPreview"'));
+  assert.ok(html.includes('id="fleetWorkstreams"'),'fleet dashboard must show mapped role conversations');
   assert.ok(html.indexOf('src="fleets.js"')<html.indexOf('src="popup.js"'),
     'Fleet templates must load before fleet wizard controls');
   assert.ok(!manifest.web_accessible_resources,'native panel should not require public iframe resources');
