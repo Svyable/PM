@@ -236,6 +236,7 @@ function renderJob(job){
     if(Number.isFinite(row.readyWaitMs)){
       const timing=document.createElement('div');timing.className='reason';
       timing.textContent='Page ready: '+(row.readyWaitMs/1000).toFixed(1)+'s · Verification: '+((row.confirmationWaitMs||0)/1000).toFixed(1)+'s'+
+        (row.submitMethod?' · Sent via '+(row.submitMethod==='button'?'Send button':'Enter fallback'):' · No submit gesture')+
         (row.routeRepairs?' · Recovered route '+row.routeRepairs+'×':'');
       wrapper.append(timing);
     }
