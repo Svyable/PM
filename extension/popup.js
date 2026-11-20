@@ -30,9 +30,13 @@ async function inspect(){
       return;
     }
     const switched=projectTabId!==context.tabId||activeProjectId!==context.projectId;
+    const oldProjectId=activeProjectId;
     projectTabId=context.tabId;activeProjectId=context.projectId;
     statusConnection(true,'Project connected automatically');
-    if(switched){fleetDetails=null;inform('');void fetchFleet();}
+    if(switched){
+      if(oldProjectId&&oldProjectId!==context.projectId)$('mission').value='';
+      fleetDetails=null;inform('');void fetchFleet();
+    }
   }catch(e){
     // Project detection is self-healing. Recheck automatically rather than
     // requiring a user-triggered Reconnect to recover from a transient error.
