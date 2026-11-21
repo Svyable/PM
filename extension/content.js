@@ -325,9 +325,12 @@
         // state on the wrong page. No submission has occurred.
         throw Object.assign(Error('ChatGPT changed conversation before Send. Nothing was submitted; inspect the draft.'),{reasonCode:'wrong-chat'});
       }
-      const before=new Set(userMessages());
-      // New project chat must not accidentally resolve to an already-visible
-      // conversation when the UI navigates after submission.
+      const beforeMessages=userMessages();
+      const beforeCount=beforeMessages.length;
+      const beforeMatching=beforeMessages.filter(el=>userMessageMatches(el,prompt)).length;
+      // Count exact matching turns, not DOM-node identity alone. React can
+      // remount an OLD user message after submission; that must never count as
+      // a new verified Send for a repeated prompt.
       const knownBefore=creating?new Set(findChats(pid).map(row=>row.id)):new Set();
       // Commit exactly ONE submission gesture. Form.requestSubmit is a more
       // meaningful fallback than a synthetic Enter when the form is available.
@@ -348,8 +351,11 @@
       for(let i=0;i<60;i++){
         await sleep(320);
         // A matching new user message is required; editor clearing is insufficient.
-        const fresh=userMessages().filter(el=>!before.has(el));
-        if(fresh.some(el=>userMessageMatches(el,prompt))){
+        const currentMessages=userMessages();
+        const matchingCount=currentMessages.filter(el=>userMessageMatches(el,prompt)).length;
+        // Require a genuinely increased count, so remounting an identical
+        // old user turn cannot satisfy the verification gate.
+        if(currentMessages.length>beforeCount&&matchingCount>beforeMatching){
           if(!creating){confirmed=true;break;}
           const next=chatId();
           if(next?.projectId===pid&&!knownBefore.has(next.chatId)){confirmed=true;break;}
