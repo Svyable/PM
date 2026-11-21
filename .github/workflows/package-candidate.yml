@@ -9,9 +9,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
-concurrency:
-  group: pm-candidate-${{ github.ref }}
-  cancel-in-progress: true
+# Stale builds exit without committing after comparing remote HEAD.
+# Do not keep a branch-wide pending job slot while rapidly editing source.
 jobs:
   package:
     runs-on: ubuntu-latest
