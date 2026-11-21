@@ -3,7 +3,7 @@
   "name": "PM — Proceed Methodically",
   "short_name": "PM",
   "description": "Launch project-level fleets of role-specific ChatGPT conversations, or continue mapped workstreams; verified local dispatch.",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "minimum_chrome_version": "120",
   "permissions": [
     "tabs",
@@ -53,7 +53,7 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "version_name": "0.11.0 — Project Fleets Candidate",
+  "version_name": "0.11.1 — Reliable Send Candidate",
   "side_panel": {
     "default_path": "panel.html"
   }
