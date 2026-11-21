@@ -113,7 +113,12 @@ function environment(mode){
   const chrome={
     runtime:{
       onMessage:{addListener(fn){handler=fn;},hasListener(){return false;},removeListener(){}},
-      async sendMessage(msg){messages.push(msg);return{ok:true};}
+      async sendMessage(msg){
+        messages.push(msg);
+        if(mode==='lateStageRoute'&&msg.type==='PM_STAGE'&&msg.phase==='submitting')
+          location.pathname='/g/'+project+'/c/other-chat';
+        return{ok:true};
+      }
     }
   };
   const context={chrome,document:doc,location,URL,getComputedStyle(){return{overflowY:'auto',visibility:'visible'};},setTimeout:(fn,ms)=>setTimeout(fn,Math.min(ms,5)),clearTimeout,InputEvent:class InputEvent{constructor(){}},KeyboardEvent:class KeyboardEvent{constructor(type,options){this.type=type;Object.assign(this,options);}},console,globalThis:{}};
@@ -181,6 +186,15 @@ async function until(check,label,ms=2500){
     assert.equal(result.reasonCode,'effort');
     assert.equal(failed.clicks,0,mode+' error must not send');
   }
+
+  const lateStage=environment('lateStageRoute');
+  lateStage.receive({type:'PM_APPLY',jobId:'late-stage',pid:project,cid:'chat-1',
+    attemptToken:'late-stage-token',prompt:'proceed methodically',effort:'High'});
+  await until(()=>lateStage.messages.some(m=>m.type==='PM_RESULT'),'final pre-send route check');
+  const stageResult=lateStage.messages.find(m=>m.type==='PM_RESULT');
+  assert.equal(stageResult.reasonCode,'wrong-chat');
+  assert.equal(stageResult.uncertain,false,'route changed before the submission gesture');
+  assert.equal(lateStage.clicks,0,'never click Send after asynchronous navigation');
 
   const late=environment('pickerRoute');
   assert.equal(late.receive({type:'PM_APPLY',jobId:'late-navigation',pid:project,cid:'chat-1',
