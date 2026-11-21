@@ -3,7 +3,7 @@
  */
 (() => {
   'use strict';
-  const VERSION='0.11.0';
+  const VERSION='0.11.1';
   const old=globalThis.__PM_LISTENER__;
   try {
     if(old&&chrome.runtime.onMessage.hasListener?.(old)){
@@ -171,53 +171,81 @@
   function isBusy(){
     return [...document.querySelectorAll('button')].some(b=>shown(b)&&(/stop generating|stop response/i.test(b.getAttribute('aria-label')||'')||/stop-button/i.test(b.getAttribute('data-testid')||'')));
   }
+  function composerSurface(box){
+    // Restrict click targets to the composer that owns the text editor.
+    // The page can contain other "Send" controls or old hidden editors.
+    return box?.closest?.('form')||
+      box?.closest?.('[data-testid*="composer"],[class*="composer-parent"]')||
+      box?.parentElement?.parentElement||null;
+  }
+  function isSendCandidate(b){
+    if(!shown(b))return false;
+    const id=norm(b.getAttribute?.('data-testid')).toLowerCase();
+    const aria=norm(b.getAttribute?.('aria-label')).toLowerCase();
+    const title=norm(b.getAttribute?.('title')).toLowerCase();
+    const text=norm(b.textContent).toLowerCase();
+    if(/stop|cancel|record|voice|dictat|microphone/.test([id,aria,title].join(' ')))return false;
+    return /\b(send|submit)\b/.test([id,aria,title].join(' '))||
+      /^send( message| prompt)?$/.test(text)||
+      b.getAttribute?.('type')==='submit';
+  }
+  function sendAvailable(b){
+    return !!(b&&shown(b)&&!b.disabled&&
+      b.getAttribute?.('aria-disabled')!=='true'&&
+      b.getAttribute?.('data-disabled')!=='true');
+  }
   function sendButton(box){
-    const form=box?.closest?.('form');
+    const near=composerSurface(box);
     const selectors=[
       'button[data-testid="send-button"]',
       'button[data-testid="composer-send-button"]',
       'button[data-testid="composer-submit-button"]',
-      'button[data-testid="chat-send-button"]',
+      'button[data-testid*="send" i]',
+      'button[data-testid*="submit" i]',
       'button[aria-label="Send prompt"]',
       'button[aria-label="Send message"]',
       'button[aria-label="Send"]',
-      'button[data-testid*="send" i]',
-      'button[data-testid*="submit" i]'
+      'button[type="submit"]'
     ];
-    // Prefer the actual composer form. ChatGPT pages can have unrelated
-    // buttons with "Send" in the title or accessibility label.
-    for(const root of [form,document].filter(Boolean)){
+    // Prefer an ENABLED control among multiple candidates. The old code
+    // returned the first disabled Send icon, even when a second live Send
+    // control was rendered in the same composer.
+    for(const root of [near,near?null:document].filter(Boolean)){
+      const candidates=[];
       for(const selector of selectors){
-        const candidate=[...(root.querySelectorAll?.(selector)||[])].find(shown);
-        if(candidate)return candidate;
+        for(const b of root.querySelectorAll?.(selector)||[]){
+          if(isSendCandidate(b)&&!candidates.includes(b))candidates.push(b);
+        }
       }
-      const buttons=[...(root.querySelectorAll?.('button')||[])].filter(shown);
-      const label=buttons.find(b=>/^send( message| prompt)?$/i.test(norm(b.getAttribute('aria-label')||b.textContent)));
-      if(label)return label;
-      if(root===form){
-        const submit=buttons.find(b=>b.getAttribute('type')==='submit'&&!/stop|cancel/i.test(norm(b.getAttribute('aria-label'))));
-        if(submit)return submit;
+      for(const b of root.querySelectorAll?.('button')||[]){
+        if(isSendCandidate(b)&&!candidates.includes(b))candidates.push(b);
       }
+      if(candidates.length)return candidates.find(sendAvailable)||candidates[0];
     }
     return null;
   }
-  function sendAvailable(button){
-    return !!(button&&shown(button)&&!button.disabled&&
-      button.getAttribute('aria-disabled')!=='true'&&
-      button.getAttribute('data-disabled')!=='true');
-  }
   function sendDiagnostic(box){
-    const form=box?.closest?.('form');
-    const buttons=[...(form?.querySelectorAll?.('button')||document.querySelectorAll('button'))]
-      .filter(shown).slice(0,14);
+    const near=composerSurface(box);
+    const buttons=[...(near?.querySelectorAll?.('button')||document.querySelectorAll('button'))]
+      .filter(shown).slice(0,18);
     return buttons.map(b=>norm([
-      b.getAttribute('data-testid'),b.getAttribute('aria-label'),
-      b.getAttribute('type'),b.disabled?'disabled':''
-    ].filter(Boolean).join(' / '))).filter(Boolean).slice(0,8).join('; ').slice(0,400);
+      b.getAttribute?.('data-testid'),b.getAttribute?.('aria-label'),
+      b.getAttribute?.('type'),b.disabled?'disabled':''
+    ].filter(Boolean).join(' / '))).filter(Boolean).slice(0,10).join('; ').slice(0,480);
   }
-
+  function submitPlan(box,button){
+    if(sendAvailable(button))return{method:'button',target:button};
+    if(button)return null; // Never bypass a disabled Send with Enter or form submit.
+    const form=box?.closest?.('form');
+    if(form&&typeof form.requestSubmit==='function')
+      return{method:'form',target:form};
+    return{method:'enter',target:box};
+  }
   function userMessages(){
-    return [...document.querySelectorAll('[data-message-author-role="user"],[data-testid="user-message"]')].filter(shown);
+    // Background tabs may render conversation turns without visible boxes.
+    // A connected user-turn node is sufficient when it is NEW and exact.
+    return [...document.querySelectorAll('[data-message-author-role="user"],[data-testid="user-message"]')]
+      .filter(el=>el.isConnected);
   }
   function userMessageMatches(node,prompt){
     // Confirmation must come from a NEW user turn containing this exact prompt.
@@ -265,53 +293,57 @@
       const inserted=document.execCommand('insertText',false,prompt);
       if(!inserted||norm(box.innerText||box.textContent)!==norm(prompt))
         throw Object.assign(Error('The editor did not accept a proper text input transaction. Nothing was sent.'),{reasonCode:'composer'});
-      await stage('injected','Prompt entered; resolving the enabled Send control.');
-      let send=null,seenButton=null;
-      // Wait for framework state and the send control to update; unlike direct
-      // DOM mutations, execCommand fires native input processing in the editor.
-      for(let i=0;i<40;i++){
-        send=sendButton(box);
-        if(send)seenButton=send;
-        if(sendAvailable(send))break;
+      await stage('injected','Prompt entered; waiting for an enabled Send control.');
+      let send=null,plan=null;
+      for(let i=0;i<32;i++){
         if(stopApply)throw Error('Aborted before Send.');
-        await sleep(175);
+        if(!routeMatches())throw Object.assign(Error('Chat changed after injection. No Send occurred.'),{reasonCode:'wrong-chat'});
+        const currentBox=composer();
+        if(!currentBox||!currentBox.isConnected){
+          await sleep(200);continue;
+        }
+        if(currentBox!==box){
+          // Rerenders can replace the entire ProseMirror editor. Do not
+          // blindly submit text from an unrelated or empty composer.
+          if(norm(currentBox.innerText||currentBox.textContent)!==norm(prompt))
+            throw Object.assign(Error('Composer was replaced after insertion. No Send occurred; inspect the draft.'),{reasonCode:'composer-replaced'});
+          box=currentBox;
+        }
+        send=sendButton(box);
+        if(sendAvailable(send)){plan=submitPlan(box,send);break;}
+        await sleep(200);
       }
-      if(send&&!sendAvailable(send)){
-        throw Object.assign(Error('Send remained disabled after prompt entry. Nothing was clicked. Visible controls: '+sendDiagnostic(box)),{reasonCode:'send-disabled'});
+      if(!plan)plan=submitPlan(box,send);
+      if(!plan){
+        throw Object.assign(Error('Send remained disabled after editor input. No submit attempted. Visible controls: '+sendDiagnostic(box)),{reasonCode:'send-disabled'});
       }
+      if(norm(box.innerText||box.textContent)!==norm(prompt))
+        throw Object.assign(Error('Composer contents changed before Send. No submit attempted.'),{reasonCode:'composer-changed'});
       if(stopApply)throw Error('Aborted before send.');
       if(!routeMatches()){
-        // The editor was empty before PM typed. Remove only the exact PM text
-        // from that editor; never click Send when route identity differs.
-        if(norm(box.innerText||box.textContent)===norm(prompt)){
-          box.textContent='';
-          box.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'deleteContentBackward'}));
-        }
-        throw Object.assign(Error('ChatGPT changed conversation during preparation. Nothing was submitted.'),{reasonCode:'wrong-chat'});
+        // Leave the PM draft untouched rather than rewriting ProseMirror
+        // state on the wrong page. No submission has occurred.
+        throw Object.assign(Error('ChatGPT changed conversation before Send. Nothing was submitted; inspect the draft.'),{reasonCode:'wrong-chat'});
       }
       const before=new Set(userMessages());
       // New project chat must not accidentally resolve to an already-visible
       // conversation when the UI navigates after submission.
       const knownBefore=creating?new Set(findChats(pid).map(row=>row.id)):new Set();
-      // A single submission gesture per attempt. Never click both a button
-      // and Enter, and NEVER repeat if confirmation is slow or ambiguous.
-      clicked=true;
-      const method=send?'button':'enter';
-      submitMethod=method;
-      await stage('submitting',method==='button'?'Clicking Send once.':'Send control not found; trying Enter once.');
-      if(send){
-        send.click();
-      }else{
-        // Some ChatGPT composer revisions render an unlabeled send icon or
-        // rely on Enter. A single Enter event is a best-effort last resort.
-        // Its outcome is UNCONFIRMED unless a NEW matching user turn appears.
+      // Commit exactly ONE submission gesture. Form.requestSubmit is a more
+      // meaningful fallback than a synthetic Enter when the form is available.
+      // Synthetic Enter may be ignored by ChatGPT; we never assume success.
+      clicked=true;submitMethod=plan.method;
+      await stage('submitting','Attempting one '+plan.method+' submission.');
+      if(plan.method==='button')plan.target.click();
+      else if(plan.method==='form')plan.target.requestSubmit();
+      else{
         box.focus();
         const ev={key:'Enter',code:'Enter',which:13,keyCode:13,bubbles:true,cancelable:true,
           ctrlKey:false,metaKey:false,shiftKey:false};
         box.dispatchEvent(new KeyboardEvent('keydown',ev));
         box.dispatchEvent(new KeyboardEvent('keyup',ev));
       }
-      await stage('verifying','Submission attempted via '+method+'; checking for the new user message.');
+      await stage('verifying','One '+submitMethod+' attempt made; checking the exact new user turn.');
       let confirmed=false;
       for(let i=0;i<60;i++){
         await sleep(320);
