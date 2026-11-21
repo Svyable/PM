@@ -385,13 +385,14 @@
       return;
     }
     if(message.type==='PM_READY'){
-      const current=chatId();
-      sendResponse({ok:true,ready:current?.projectId===message.pid&&current?.chatId===message.cid&&!!composer(),chat:current});
+      const current=chatId(),busy=isBusy();
+      sendResponse({ok:true,ready:current?.projectId===message.pid&&current?.chatId===message.cid&&
+        !!composer()&&!busy,busy,chat:current});
       return;
     }
     if(message.type==='PM_NEW_READY'){
-      const correct=projectId()===message.pid&&!chatId();
-      sendResponse({ok:true,ready:correct&&!!composer(),projectId:projectId()});
+      const correct=projectId()===message.pid&&!chatId(),busy=isBusy();
+      sendResponse({ok:true,ready:correct&&!!composer()&&!busy,busy,projectId:projectId()});
       return;
     }
     if(message.type==='PM_SCAN'){
