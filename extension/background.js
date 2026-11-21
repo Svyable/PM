@@ -369,7 +369,8 @@ async function dispatch(tabId){
               ?{type:'PM_NEW_READY',pid}
               :{type:'PM_READY',pid,cid});
             if(r?.ready===true)break;
-            lastReason=newChat?'the Project new-chat composer is not ready':'the conversation composer is not available yet';
+            lastReason=r?.busy?'ChatGPT is still generating; PM will wait before sending the next instruction':
+              newChat?'the Project new-chat composer is not ready':'the conversation composer is not available yet';
           }
         }catch(e){lastReason='the ChatGPT content script is still loading ('+error(e)+')';}
       }
