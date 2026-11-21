@@ -21,7 +21,7 @@ async function waitFor(check,label,timeout=12000){
 function setup(options={}){
   const storage={},tabs=new Map(),injected=new Set(),attempts=[],opened=[];
   tabs.set(1,{id:1,windowId:42,url:projectURL,status:'complete',route:null,ready:true});
-  let listener,onUpdated,onRemoved,onActivated,nextTabId=1,injections=0,sideOpens=0,repairUpdates=0;
+  let listener,onUpdated,onRemoved,onActivated,nextTabId=1,injections=0,sideOpens=0,repairUpdates=0,busyReadyChecks=0;
   const chrome={
     runtime:{onMessage:{addListener(fn){listener=fn;}},onStartup:{addListener(){}},onInstalled:{addListener(){}}},
     sidePanel:{async setPanelBehavior(opts){assert.equal(opts.openPanelOnActionClick,true);},async open(opts){assert.equal(opts.windowId,42,'side panel must be window-wide, not tab-specific');assert.equal(opts.tabId,undefined);sideOpens++;}},
@@ -63,12 +63,13 @@ function setup(options={}){
         if(!injected.has(id))throw Error('Receiving end does not exist');
         const tab=tabs.get(id);if(!tab)throw Error('Tab not found');
         if(msg.type==='PM_PING'){
-          if(id===1||tab.url===projectURL)return{ok:true,version:'0.11.0',projectId:project,chat:null};
-          return{ok:true,version:'0.11.0',projectId:null,chat:{projectId:project,chatId:tab.route}};
+          if(id===1||tab.url===projectURL)return{ok:true,version:'0.11.1',projectId:project,chat:null};
+          return{ok:true,version:'0.11.1',projectId:null,chat:{projectId:project,chatId:tab.route}};
         }
         if(msg.type==='PM_CONTEXT')return{ok:true,projectId:project,count:2,chats,projectTitle:'/demo'};
         if(msg.type==='PM_READY'){
-          return{ok:true,ready:tab.ready&&tab.route===msg.cid,
+          const busy=!!(options.busyFirstReadies&&msg.cid==='chat-one'&&++busyReadyChecks<=options.busyFirstReadies);
+          return{ok:true,ready:tab.ready&&tab.route===msg.cid&&!busy,busy,
             chat:{projectId:project,chatId:tab.route}};
         }
         if(msg.type==='PM_NEW_READY'){
@@ -146,7 +147,7 @@ function setup(options={}){
   }
   const prefs={target:2,prompt:'proceed methodically',effort:'High',
     delaySeconds:2,loadTimeoutSeconds:180,keepTabs:true};
-  return{request,prefs,storage,attempts,opened,tabs,activate(tabId){onActivated?.({tabId});},get injections(){return injections;},get sideOpens(){return sideOpens;},get repairUpdates(){return repairUpdates;}};
+  return{request,prefs,storage,attempts,opened,tabs,activate(tabId){onActivated?.({tabId});},get injections(){return injections;},get sideOpens(){return sideOpens;},get repairUpdates(){return repairUpdates;},get busyReadyChecks(){return busyReadyChecks;}};
 }
 (async()=>{
   const normal=setup();
@@ -157,6 +158,13 @@ function setup(options={}){
   assert.equal(normal.attempts.length,2,'tab update must not double send');
   assert.equal(new Set(normal.attempts.map(a=>a.token)).size,2);
   assert.ok(normal.injections>=3,'dynamic injection should attach to each tab');
+
+  const busy=setup({busyFirstReadies:2});
+  await busy.request('PM_START',{tabId:1,config:busy.prefs});
+  await waitFor(()=>busy.storage.pmJob?.status==='done','wait for target generation to stop',12000);
+  assert.ok(busy.busyReadyChecks>=3,'worker must poll until generation completes');
+  assert.equal(busy.storage.pmJob.completed,2);
+  assert.equal(busy.attempts.length,2,'no duplicate send while target is busy');
 
   const projectSelection=setup();
   const found=await projectSelection.request('PM_FIND_PROJECT',{});

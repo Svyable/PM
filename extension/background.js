@@ -3,7 +3,7 @@
  */
 'use strict';
 importScripts('fleets.js');
-const VERSION='0.11.0', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
+const VERSION='0.11.1', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
 const PROJECT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/project\/?(?:[?#].*)?$/;
 const CHAT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/c\/([a-zA-Z0-9-]+)\/?$/;
 const DEFAULTS={mode:'existing',newCount:1,target:6,prompt:'proceed methodically',mission:'',fleetTemplate:'brainswarm',effort:'High',delaySeconds:2,loadTimeoutSeconds:180,keepTabs:true};
@@ -369,7 +369,8 @@ async function dispatch(tabId){
               ?{type:'PM_NEW_READY',pid}
               :{type:'PM_READY',pid,cid});
             if(r?.ready===true)break;
-            lastReason=newChat?'the Project new-chat composer is not ready':'the conversation composer is not available yet';
+            lastReason=r?.busy?'ChatGPT is still generating; PM will wait before sending the next instruction':
+              newChat?'the Project new-chat composer is not ready':'the conversation composer is not available yet';
           }
         }catch(e){lastReason='the ChatGPT content script is still loading ('+error(e)+')';}
       }
@@ -474,7 +475,7 @@ async function finish(tabId,result,explicit=null){
       readyWaitMs:j.current?.dispatchedAt?Math.max(0,j.current.dispatchedAt-j.current.startedAt):null,
       confirmationWaitMs:j.current?.dispatchedAt?Math.max(0,Date.now()-j.current.dispatchedAt):null,
       routeRepairs:j.current?.routeRepairs||0,
-      submitMethod:['button','enter'].includes(result.submitMethod)?result.submitMethod:null};
+      submitMethod:['button','form','enter'].includes(result.submitMethod)?result.submitMethod:null};
     j.results.push(row);
     if(row.ok&&row.kind==='new'){
       void updateCatalog(j.projectId,[{id:row.id,url:row.url,title:row.title}],false);

@@ -1,7 +1,7 @@
 # PM v1.0 launch gate
 
 **State: NOT APPROVED FOR PUBLIC v1.0 RELEASE**
-**Candidate: 0.11.0**
+**Candidate: 0.11.1**
 **Prepared: November 18, 2026**
 
 Green automated tests demonstrate code paths, not authenticated ChatGPT compatibility or third-party authorization.
@@ -113,3 +113,11 @@ Keep the 0.7 installer on GitHub. Stop the run, inspect uncertain sends before m
 - [ ] Prompt appears in composer, Send becomes enabled, and exactly one submission gesture occurs with a visible confirmed user message.
 - [ ] If Send remains disabled, PM does not attempt Enter or falsely report success.
 - [ ] If Send is absent, only one Enter fallback is attempted and no ambiguous submission is automatically retried.
+
+### Submission reliability v0.11.1
+- [ ] One real, signed-in ChatGPT send with exactly one new user turn, correct Project and effort.
+- [ ] Newly created role-specific chat has the exact first submitted prompt and a new verified ID.
+- [ ] Background dispatch works while user browses other tabs; no manual focus required under ordinary Chrome conditions.
+- [ ] An old identical user message re-rendering is not mistaken for a new submission.
+- [ ] Disabled Send does not trigger form/Enter fallback or a success state.
+- [ ] No duplicate submission after uncertainty, refresh, browser suspension or extension restart.

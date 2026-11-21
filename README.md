@@ -2,7 +2,7 @@
 
 **One mission. A fleet of specialized conversations.** PM is a local-first Chrome extension that can initialize a ChatGPT Project with role-specific threads, continue a saved fleet, or dispatch a single prompt across selected existing conversations.
 
-[**Download PM v0.11.0 candidate (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.11.0.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
+[**Download PM v0.11.1 candidate (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.11.1.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
 
 ## Install
 
@@ -37,6 +37,16 @@ The launch form is always visible in the full panel, even when a run is paused; 
 If ChatGPT changes route **before** Send, PM tries restoring the originally queued conversation in the same tab up to twice, without marking it sent or moving the queue. The fail-closed logic still pauses if it cannot verify the correct route, and **never** retries an uncertain click.
 
 **Upgrade:** stop any run created by an earlier PM version; load PM 0.10 unpacked at `chrome://extensions`, and refresh your Project page. Click the PM toolbar icon or the bottom-right on-page launcher.
+
+## PM 0.11.1 — Stronger Send and verification
+
+- Prefer the **enabled Send button in the active composer**, not an obsolete disabled control or an unrelated page button.
+- Wait for the composer to settle after prompt injection, fail safely if it is replaced, and never overwrite a draft to coerce the editor.
+- If there is no Send button, use the active composer form's `requestSubmit()` when available; otherwise attempt a single Enter event. If Send is visible but disabled, do not bypass it.
+- Verify that the number of actual matching user turns increases; rerendering an *old* matching message is not success. Count connected rendered user turns even when a background tab has no visible layout box.
+- Record which gesture PM attempted (Send button, form submit or Enter) and preserve uncertain outcomes without automatically retrying.
+
+These improvements pass automated mocks but still require an authenticated signed-in Chrome test with a disposable ChatGPT Project before public stable v1. See [live QA](docs/QA_RUNBOOK.md).
 
 ## PM Project Fleets (v0.11)
 
@@ -94,7 +104,7 @@ PM **streams the first discovered chat batch into the dispatch queue immediately
 
 ## Preparing for PM v1
 
-**0.11.0 is a feature candidate, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
+**0.11.1 is a feature candidate, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
 
 - [v1 go/no-go and live-browser test checklist](docs/V1_LAUNCH_CHECKLIST.md)
 - [Authenticated browser QA runbook](docs/QA_RUNBOOK.md)
