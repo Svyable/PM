@@ -334,9 +334,22 @@
       const knownBefore=creating?new Set(findChats(pid).map(row=>row.id)):new Set();
       // Commit exactly ONE submission gesture. Form.requestSubmit is a more
       // meaningful fallback than a synthetic Enter when the form is available.
-      // Synthetic Enter may be ignored by ChatGPT; we never assume success.
+      // Stage messages round-trip through the extension service worker: the
+      // page could navigate DURING that await. Revalidate at the last instant.
+      await stage('submitting','Preparing one '+plan.method+' submission.');
+      if(stopApply||!routeMatches()||composer()!==box){
+        throw Object.assign(Error('Target conversation or composer changed immediately before submission. Nothing was clicked.'),{reasonCode:'wrong-chat'});
+      }
+      if(norm(box.innerText||box.textContent)!==norm(prompt)){
+        throw Object.assign(Error('Prompt changed immediately before submission. Nothing was clicked.'),{reasonCode:'composer-changed'});
+      }
+      if(plan.method==='button'&&!sendAvailable(plan.target)){
+        throw Object.assign(Error('Send became disabled immediately before click. Nothing was submitted.'),{reasonCode:'send-disabled'});
+      }
+      if(plan.method==='form'&&plan.target.isConnected===false){
+        throw Object.assign(Error('Composer form was replaced before submit. Nothing was submitted.'),{reasonCode:'composer-replaced'});
+      }
       clicked=true;submitMethod=plan.method;
-      await stage('submitting','Attempting one '+plan.method+' submission.');
       if(plan.method==='button')plan.target.click();
       else if(plan.method==='form')plan.target.requestSubmit();
       else{
