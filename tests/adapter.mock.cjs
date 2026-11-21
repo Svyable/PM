@@ -7,7 +7,7 @@ const path=require('node:path');
 const code=fs.readFileSync(path.join(__dirname,'..','extension','content.js'),'utf8');
 const project='g-p-demo123';
 function environment(mode){
-  let handler,clicks=0,messages=[],menuOpen=false,effortClicks=0,wrongClicks=0,enterKeys=0;
+  let handler,clicks=0,messages=[],menuOpen=false,effortClicks=0,wrongClicks=0,enterKeys=0,formSubmits=0;
   const location={pathname:(mode==='project'||mode.startsWith('new'))?'/g/'+project+'/project':'/g/'+project+'/c/chat-1',href:'https://chatgpt.com/',origin:'https://chatgpt.com'};
   const box={
     isConnected:true,getClientRects:()=>[{}],innerText:(mode==='draft'||mode==='newdraft')?'existing unsent draft':'',
@@ -22,11 +22,25 @@ function environment(mode){
       return true;
     }
   };
-  const form={querySelector(sel){
-    if(mode==='misleading'&&sel==='button:has([class*="ModelPickerTriggerModelGroup"])')return effort;
-    if(mode==='misleading'&&sel==='button[data-composer-navigation-target="reasoning"]')return wrongNav;
-    return sel==='button[data-selected-reasoning-effort]'?effort:null;
-  }};
+  const form={
+    querySelector(sel){
+      if(mode==='misleading'&&sel==='button:has([class*="ModelPickerTriggerModelGroup"])')return effort;
+      if(mode==='misleading'&&sel==='button[data-composer-navigation-target="reasoning"]')return wrongNav;
+      return sel==='button[data-selected-reasoning-effort]'?effort:null;
+    },
+    querySelectorAll(selector){
+      if(mode==='sendMissing'||mode==='formSubmit')return [];
+      const buttons=mode==='competingSend'?[inactiveSend,send]:[send];
+      if(selector==='button')return [...buttons,effort];
+      if(selector.includes('send')||selector.includes('submit')||selector.includes('Send')||selector==='button[type="submit"]')
+        return buttons;
+      return [];
+    },
+    ...(mode==='formSubmit'?{requestSubmit(){
+      formSubmits++;box.innerText='';box.textContent='';
+      messageNodes.push({isConnected:true,getClientRects:()=>[{}],innerText:'proceed methodically',querySelector(){return null;}});
+    }}:{})
+  };
   let currentEffort=['picker','pickerRoute'].includes(mode)?'medium':'high';
   const effort={
     isConnected:mode!=='noeffort',getClientRects:()=>[{}],textContent:['picker','pickerRoute'].includes(mode)?'Medium':'High',
@@ -42,12 +56,17 @@ function environment(mode){
     click(){currentEffort='high';effort.textContent='High';menuOpen=false;if(mode==='pickerRoute')location.pathname='/g/'+project+'/c/chat-2';}
   };
   const messageNodes=mode==='existingmatch'?[{isConnected:true,getClientRects:()=>[{}],innerText:'proceed methodically',querySelector(){return null;}}]:[];
+  const inactiveSend={
+    isConnected:true,getClientRects:()=>[{}],disabled:true,
+    getAttribute(k){return k==='aria-label'?'Send prompt':k==='data-testid'?'send-button':null;},
+    click(){throw Error('PM clicked an obsolete disabled Send icon.');}
+  };
   const send={
     isConnected:true,getClientRects:()=>[{}],disabled:mode==='sendDisabled',
     getAttribute(k){return k==='aria-label'?'Send prompt':k==='data-testid'?'send-button':null;},
     click(){
       clicks++;box.innerText='';box.textContent='';
-      if(['chat','picker','misleading','wrongturn','newchat','newother','newnochat'].includes(mode)){
+      if(['chat','picker','misleading','competingSend','wrongturn','newchat','newother','newnochat'].includes(mode)){
         messageNodes.push({isConnected:true,getClientRects:()=>[{}],
           innerText:mode==='wrongturn'?'a different message':'proceed methodically',
           querySelector(){return null;}});
@@ -95,7 +114,7 @@ function environment(mode){
   const context={chrome,document:doc,location,URL,getComputedStyle(){return{overflowY:'auto',visibility:'visible'};},setTimeout:(fn,ms)=>setTimeout(fn,Math.min(ms,5)),clearTimeout,InputEvent:class InputEvent{constructor(){}},KeyboardEvent:class KeyboardEvent{constructor(type,options){this.type=type;Object.assign(this,options);}},console,globalThis:{}};
   vm.runInNewContext(code,context,{filename:'content.js'});
   function receive(m){let response;handler(m,{},v=>response=v);return response;}
-  return{receive,messages,get clicks(){return clicks;},get effortClicks(){return effortClicks;},get wrongClicks(){return wrongClicks;},get enterKeys(){return enterKeys;}};
+  return{receive,messages,get clicks(){return clicks;},get effortClicks(){return effortClicks;},get wrongClicks(){return wrongClicks;},get enterKeys(){return enterKeys;},get formSubmits(){return formSubmits;}};
 }
 async function until(check,label,ms=2500){
   const started=Date.now();
@@ -104,7 +123,7 @@ async function until(check,label,ms=2500){
 }
 (async()=>{
   const scan=environment('project');
-  assert.equal(scan.receive({type:'PM_PING'}).version,'0.11.0');
+  assert.equal(scan.receive({type:'PM_PING'}).version,'0.11.1');
   assert.equal(scan.receive({type:'PM_SCAN',jobId:'scan1',pid:project,target:2}).accepted,true);
   await until(()=>scan.messages.some(m=>m.type==='PM_SCANNED'),'scan result');
   const found=scan.messages.find(m=>m.type==='PM_SCANNED');
@@ -204,6 +223,24 @@ async function until(check,label,ms=2500){
   assert.equal(enter.clicks,0);
   const stages=enter.messages.filter(m=>m.type==='PM_STAGE').map(m=>m.phase);
   assert.ok(stages.includes('injected')&&stages.includes('submitting')&&stages.includes('verifying'));
+
+  const competing=environment('competingSend');
+  competing.receive({type:'PM_APPLY',jobId:'competing-send',pid:project,cid:'chat-1',
+    attemptToken:'competing-token',prompt:'proceed methodically',effort:'High'});
+  await until(()=>competing.messages.some(m=>m.type==='PM_RESULT'),'enabled send among multiple buttons');
+  assert.equal(competing.messages.find(m=>m.type==='PM_RESULT').ok,true);
+  assert.equal(competing.clicks,1,'enabled send selected, obsolete disabled icon not clicked');
+  assert.equal(competing.messages.find(m=>m.type==='PM_RESULT').submitMethod,'button');
+
+  const formSubmit=environment('formSubmit');
+  formSubmit.receive({type:'PM_APPLY',jobId:'native-form',pid:project,cid:'chat-1',
+    attemptToken:'form-token',prompt:'proceed methodically',effort:'High'});
+  await until(()=>formSubmit.messages.some(m=>m.type==='PM_RESULT'),'form requestSubmit fallback');
+  assert.equal(formSubmit.messages.find(m=>m.type==='PM_RESULT').ok,true);
+  assert.equal(formSubmit.messages.find(m=>m.type==='PM_RESULT').submitMethod,'form');
+  assert.equal(formSubmit.formSubmits,1,'one native form submission');
+  assert.equal(formSubmit.clicks,0);
+  assert.equal(formSubmit.enterKeys,0);
 
   const send=environment('chat');
   assert.equal(send.receive({type:'PM_READY',pid:project,cid:'chat-1'}).ready,true);
