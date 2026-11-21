@@ -117,3 +117,13 @@ Link this signed-off runbook to the v1 GO/NO-GO tracking issue. Keep the issue o
 - [ ] Verify fast background-tab operation while doing other work. Observe injected/submitting/verifying phase labels.
 - [ ] Force Send disabled or hide it in developer tools on a disposable chat; check PM fails closed or performs at most one Enter, never two gestures.
 - [ ] Check the export contains verified/uncertain records only, without invented cooperation or cross-chat message access.
+
+## Smoke test J: Send controls and background confirmation (v0.11.1)
+
+- [ ] Use a disposable Project with one chat. Preselect High manually; instruct PM to continue one chat. Confirm the exact user message is submitted once, not merely visible in the input.
+- [ ] Try one new project thread and confirm the newly created URL is inside the correct Project.
+- [ ] Open a second ordinary browser tab during the run; verify PM still detects the submitted user turn without focusing the dispatched tab.
+- [ ] If two controls are present (e.g. disabled old Send and enabled current Send), PM must select the enabled one in the live composer.
+- [ ] With Send absent but a functioning composer form, PM may attempt requestSubmit once; if the only fallback is Enter, PM sends one keyboard gesture only.
+- [ ] With Send visible but disabled, PM must not attempt form or Enter; report send-disabled without claiming success.
+- [ ] Repeat an existing prompt in the same chat. Verify remounting an earlier identical user turn never counts as a successful new submission.
