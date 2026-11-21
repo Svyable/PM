@@ -50,6 +50,8 @@ function environment(mode){
   };
   const wrongNav={isConnected:true,getClientRects:()=>[{}],textContent:'Reasoning options',
     getAttribute(){return null;},click(){wrongClicks++;}};
+  const stopGenerating={isConnected:true,getClientRects:()=>[{}],textContent:'Stop generating',
+    getAttribute(k){return k==='aria-label'?'Stop generating':null;}};
   const highOption={
     isConnected:true,getClientRects:()=>[{}],innerText:'High\nMore reasoning time',textContent:'High\nMore reasoning time',
     getAttribute(){return null;},querySelector(){return null;},
@@ -90,7 +92,7 @@ function environment(mode){
     querySelectorAll(selector){
       if(mode==='project'&&selector.includes('a[href*="/c/"]'))return anchors;
       if(selector.startsWith('.ProseMirror'))return[box];
-      if(selector==='button')return mode==='sendMissing'?[effort]:[effort,send];
+      if(selector==='button')return mode==='generating'?[effort,send,stopGenerating]:mode==='sendMissing'?[effort]:[effort,send];
       if(selector==='button[data-testid="send-button"]')return mode==='sendMissing'?[]:[send];
       if(selector.includes('data-message-author-role="user"'))return messageNodes;
       if(selector==='button[data-selected-reasoning-effort]')return[effort];
@@ -144,6 +146,12 @@ async function until(check,label,ms=2500){
   assert.equal(inventory.receive({type:'PM_INVENTORY_SCAN',pid:project,target:2}).accepted,true);
   await until(()=>inventory.messages.some(m=>m.type==='PM_INVENTORY_DONE'),'inventory scan');
   assert.equal(inventory.messages.find(m=>m.type==='PM_INVENTORY_DONE').chats.length,2);
+
+  const generating=environment('generating');
+  const readiness=generating.receive({type:'PM_READY',pid:project,cid:'chat-1'});
+  assert.equal(readiness.ready,false,'never submit into a still-generating conversation');
+  assert.equal(readiness.busy,true);
+  assert.equal(generating.receive({type:'PM_STATUS'}).generating,true);
 
   const draft=environment('draft');
   assert.equal(draft.receive({type:'PM_APPLY',jobId:'job2',pid:project,cid:'chat-1',attemptToken:'draft-token',prompt:'proceed methodically',effort:'High'}).accepted,true);
