@@ -55,7 +55,7 @@ function environment(mode){
     getAttribute(){return null;},querySelector(){return null;},
     click(){currentEffort='high';effort.textContent='High';menuOpen=false;if(mode==='pickerRoute')location.pathname='/g/'+project+'/c/chat-2';}
   };
-  const messageNodes=mode==='existingmatch'?[{isConnected:true,getClientRects:()=>[{}],innerText:'proceed methodically',querySelector(){return null;}}]:[];
+  const messageNodes=['existingmatch','rerenderOld'].includes(mode)?[{isConnected:true,getClientRects:()=>[{}],innerText:'proceed methodically',querySelector(){return null;}}]:[];
   const inactiveSend={
     isConnected:true,getClientRects:()=>[{}],disabled:true,
     getAttribute(k){return k==='aria-label'?'Send prompt':k==='data-testid'?'send-button':null;},
@@ -73,6 +73,9 @@ function environment(mode){
       }
       if(mode==='newchat')location.pathname='/g/'+project+'/c/generated-1';
       if(mode==='newother')location.pathname='/g/g-p-other/c/generated-1';
+      if(mode==='rerenderOld')messageNodes.splice(0,messageNodes.length,{
+        isConnected:true,getClientRects:()=>[{}],innerText:'proceed methodically',querySelector(){return null;}
+      });
     }
   };
   const anchors=['First draft','Second thread'].map((name,i)=>({
@@ -281,7 +284,7 @@ async function until(check,label,ms=2500){
     assert.equal(environmentCase.clicks,1,'new chat must not retry an uncertain Send');
   }
 
-  for(const mode of ['cleared','wrongturn','existingmatch']){
+  for(const mode of ['cleared','wrongturn','existingmatch','rerenderOld']){
     const unsafe=environment(mode);
     unsafe.receive({type:'PM_APPLY',jobId:'negative-'+mode,pid:project,cid:'chat-1',attemptToken:'negative-'+mode,prompt:'proceed methodically',effort:'High'});
     await until(()=>unsafe.messages.some(m=>m.type==='PM_RESULT'),mode+' unconfirmed result');
