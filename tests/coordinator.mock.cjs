@@ -63,10 +63,17 @@ function setup(options={}){
         if(!injected.has(id))throw Error('Receiving end does not exist');
         const tab=tabs.get(id);if(!tab)throw Error('Tab not found');
         if(msg.type==='PM_PING'){
-          if(id===1||tab.url===projectURL)return{ok:true,version:'0.11.1',projectId:project,chat:null};
-          return{ok:true,version:'0.11.1',projectId:null,chat:{projectId:project,chatId:tab.route}};
+          if(id===1||tab.url===projectURL)return{ok:true,version:'0.12.0',projectId:project,chat:null};
+          return{ok:true,version:'0.12.0',projectId:null,chat:{projectId:project,chatId:tab.route}};
         }
         if(msg.type==='PM_CONTEXT')return{ok:true,projectId:project,count:2,chats,projectTitle:'/demo'};
+        if(msg.type==='PM_HEALTH')return{ok:true,projectId:project,composerReady:true,effort:'High',generating:false,draftPresent:false};
+        if(msg.type==='PM_VERIFY_ATTEMPT'){
+          const matched=tab.confirmedPrompt===msg.prompt;
+          return{ok:true,verified:!!matched&&Number.isInteger(msg.beforeCount)&&msg.beforeCount===0&&
+            Number.isInteger(msg.beforeMatching)&&msg.beforeMatching===0,
+            chatId:tab.route,projectId:project,createdUrl:tab.url};
+        }
         if(msg.type==='PM_READY'){
           const busy=!!(options.busyFirstReadies&&msg.cid==='chat-one'&&++busyReadyChecks<=options.busyFirstReadies);
           return{ok:true,ready:tab.ready&&tab.route===msg.cid&&!busy,busy,
@@ -98,7 +105,8 @@ function setup(options={}){
             (options.uncertainSecond&&msg.cid==='chat-two')||
             (options.uncertainNew&&creating&&msg.cid==='new:0');
           const skipped=options.draftFirst&&msg.cid==='chat-one';
-          const wrongRoute=options.routeChangedBeforeSend&&msg.cid==='chat-one'&&!tab.routeFixedOnce;
+          const wrongRoute=(options.routeChangedBeforeSend||options.routeChangedAfterInsertion)&&
+            msg.cid==='chat-one'&&!tab.routeFixedOnce;
           if(wrongRoute){
             tab.routeFixedOnce=true;
             tab.url='https://chatgpt.com/g/'+project+'/c/chat-two';
@@ -108,11 +116,21 @@ function setup(options={}){
           if(creating){
             tab.route=created;
             tab.url='https://chatgpt.com/g/'+project+'/c/'+created;
+            if(options.lostAckNew)tab.confirmedPrompt=msg.prompt;
             setTimeout(()=>onUpdated?.(id,{url:tab.url}),0);
+          }
+          if(options.lostAckNew&&creating){
+            // Full navigation kills the original adapter before PM_RESULT.
+            setTimeout(()=>void request('PM_STAGE',{
+              jobId:msg.jobId,chatId:msg.cid,attemptToken:msg.attemptToken,
+              phase:'submitting',beforeCount:0,beforeMatching:0
+            },id),4);
+            return{accepted:true};
           }
           setTimeout(()=>void request('PM_RESULT',{
             jobId:msg.jobId,chatId:msg.cid,attemptToken:msg.attemptToken,
             ok:!uncertain&&!skipped&&!wrongRoute,uncertain,
+            injected:!!(options.routeChangedAfterInsertion&&wrongRoute),
             reasonCode:wrongRoute?'wrong-chat':uncertain?'unconfirmed':skipped?'draft':'sent',
             error:wrongRoute?'ChatGPT changed conversations before Send. Nothing was submitted.':uncertain?'No matching rendered user message':skipped?'Existing draft preserved':null,
             ...(creating?{createdChatId:created,createdUrl:tab.url}:{})
@@ -127,7 +145,11 @@ function setup(options={}){
     },
     storage:{local:{
       async get(k){return Object.fromEntries((Array.isArray(k)?k:[k]).map(key=>[key,storage[key]]));},
-      async set(v){Object.assign(storage,v);}
+      async set(v){
+         if(options.failFleetLedger&&Object.prototype.hasOwnProperty.call(v,'pmProjectFleets'))
+           throw Error('Simulated Chrome storage quota error');
+         Object.assign(storage,v);
+       }
     }},
     scripting:{async executeScript({target}){injected.add(target.tabId);injections++;}},
     alarms:{async create(){},async clear(){},onAlarm:{addListener(){}}},
@@ -147,7 +169,11 @@ function setup(options={}){
   }
   const prefs={target:2,prompt:'proceed methodically',effort:'High',
     delaySeconds:2,loadTimeoutSeconds:180,keepTabs:true};
-  return{request,prefs,storage,attempts,opened,tabs,activate(tabId){onActivated?.({tabId});},get injections(){return injections;},get sideOpens(){return sideOpens;},get repairUpdates(){return repairUpdates;},get busyReadyChecks(){return busyReadyChecks;}};
+  return{request,prefs,storage,attempts,opened,tabs,
+    updateTab(tabId,change={status:'complete'}){onUpdated?.(tabId,change);},
+    activate(tabId){onActivated?.({tabId});},
+    get injections(){return injections;},get sideOpens(){return sideOpens;},
+    get repairUpdates(){return repairUpdates;},get busyReadyChecks(){return busyReadyChecks;}};
 }
 (async()=>{
   const normal=setup();
@@ -167,6 +193,10 @@ function setup(options={}){
   assert.equal(busy.attempts.length,2,'no duplicate send while target is busy');
 
   const projectSelection=setup();
+  const health=await projectSelection.request('PM_GET_HEALTH',{tabId:1});
+  assert.equal(health.ok,true);
+  assert.equal(health.composerReady,true);
+  assert.equal(health.effort,'High');
   const found=await projectSelection.request('PM_FIND_PROJECT',{});
   assert.equal(found.ok,true);
   assert.equal(found.tabId,1);
@@ -186,6 +216,13 @@ function setup(options={}){
   assert.equal(repair.storage.pmJob.results[0].routeRepairs,1);
   assert.equal(repair.repairUpdates,1);
   assert.deepEqual(Array.from(repair.storage.pmJob.results,x=>x.queueId),['chat-one','chat-two']);
+
+  const draftRoute=setup({routeChangedAfterInsertion:true});
+  await draftRoute.request('PM_START',{tabId:1,config:draftRoute.prefs});
+  await waitFor(()=>draftRoute.storage.pmJob?.status==='paused','draft left after late navigation',6000);
+  assert.equal(draftRoute.storage.pmJob.index,0,'do not advance after unsent draft');
+  assert.equal(draftRoute.repairUpdates,0,'do not automatically reopen after injection');
+  assert.match(draftRoute.storage.pmJob.pauseReason,/unsent draft/i);
 
   const uncertain=setup({uncertainFirst:true});
   await uncertain.request('PM_START',{tabId:1,config:uncertain.prefs});
@@ -208,6 +245,17 @@ function setup(options={}){
   assert.ok(fresh.attempts.every(a=>a.kind==='new'));
   assert.equal(new Set(fresh.storage.pmJob.results.map(r=>r.id)).size,3);
   assert.ok(fresh.storage.pmJob.results.every(r=>r.kind==='new'&&r.url.includes('/g/'+project+'/c/generated-')));
+
+  // Full navigation may terminate the original adapter immediately after Send.
+  // Recover proof read-only from the destination without repeating a click.
+  const recovered=setup({lostAckNew:true});
+  await recovered.request('PM_START',{tabId:1,config:{...recovered.prefs,target:1,mode:'new',newCount:1}});
+  await waitFor(()=>recovered.storage.pmJob?.status==='done','destination-page verified new chat',9000);
+  assert.equal(recovered.storage.pmJob.completed,1);
+  assert.equal(recovered.storage.pmJob.results[0].verificationSource,'destination');
+  assert.equal(recovered.storage.pmJob.results[0].submitMethod,'observed');
+  assert.equal(recovered.attempts.length,1,'navigation witness must never repeat Send');
+  assert.equal(recovered.storage.pmJob.results[0].id,'generated-2');
 
   // Mixed mode continues the existing two chats then starts one new thread.
   const mixed=setup();
@@ -262,6 +310,20 @@ function setup(options={}){
   assert.equal(new Set(followups.map(a=>a.prompt)).size,3);
   assert.deepEqual(followups.map(a=>a.chatId),Array.from(ledger.threads,x=>x.id));
   assert.equal(seeded.storage.pmProjectFleets[project].cycle,1);
+
+  // If fleet mapping storage fails AFTER a verified Send, never resend.
+  const quota=setup({failFleetLedger:true});
+  await quota.request('PM_START',{tabId:1,config:{
+    ...quota.prefs,target:1,mode:'fleet-start',fleetTemplate:'brainswarm',mission:'Investigate a test mission.'
+  }});
+  await waitFor(()=>quota.storage.pmJob?.status==='paused','fleet storage warning',7000);
+  assert.equal(quota.storage.pmJob.completed,1);
+  assert.equal(quota.storage.pmJob.results[0].ledgerSaved,false);
+  assert.match(quota.storage.pmJob.results[0].warning,/could not be saved/i);
+  assert.equal(quota.attempts.length,1);
+  assert.equal((await quota.request('PM_RESUME')).ok,true);
+  await waitFor(()=>quota.storage.pmJob?.status==='done','resume without resending',3000);
+  assert.equal(quota.attempts.length,1);
 
   // Critical v1 gate: a final unconfirmed send must NOT display a green
   // completed run, even when all queued conversations have been attempted.
