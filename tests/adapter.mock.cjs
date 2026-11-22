@@ -7,7 +7,7 @@ const path=require('node:path');
 const code=fs.readFileSync(path.join(__dirname,'..','extension','content.js'),'utf8');
 const project='g-p-demo123';
 function environment(mode){
-  let handler,clicks=0,messages=[],menuOpen=false,effortClicks=0,wrongClicks=0,enterKeys=0,formSubmits=0;
+  let handler,clicks=0,messages=[],menuOpen=false,effortClicks=0,wrongClicks=0,enterKeys=0,formSubmits=0,limitVisible=mode==='rateLimit';
   const location={pathname:(mode==='project'||mode.startsWith('new'))?'/g/'+project+'/project':'/g/'+project+'/c/chat-1',href:'https://chatgpt.com/',origin:'https://chatgpt.com'};
   const box={
     isConnected:true,getClientRects:()=>[{}],innerText:(mode==='draft'||mode==='newdraft')?'existing unsent draft':'',
@@ -52,6 +52,8 @@ function environment(mode){
     getAttribute(){return null;},click(){wrongClicks++;}};
   const stopGenerating={isConnected:true,getClientRects:()=>[{}],textContent:'Stop generating',
     getAttribute(k){return k==='aria-label'?'Stop generating':null;}};
+  const usageAlert={isConnected:true,getClientRects:()=>[{}],innerText:"You've reached your usage limit. Try again later.",
+    textContent:"You've reached your usage limit. Try again later.",closest(){return null;}};
   const highOption={
     isConnected:true,getClientRects:()=>[{}],innerText:'High\nMore reasoning time',textContent:'High\nMore reasoning time',
     getAttribute(){return null;},querySelector(){return null;},
@@ -90,6 +92,7 @@ function environment(mode){
   const doc={
     scrollingElement:scrolling,documentElement:scrolling,
     querySelectorAll(selector){
+      if(selector.startsWith('[role="alert"]'))return limitVisible?[usageAlert]:[];
       if(mode==='project'&&selector.includes('a[href*="/c/"]'))return anchors;
       if(selector.startsWith('.ProseMirror'))return[box];
       if(selector==='button')return mode==='generating'?[effort,send,stopGenerating]:mode==='sendMissing'?[effort]:[effort,send];
@@ -117,6 +120,8 @@ function environment(mode){
         messages.push(msg);
         if(mode==='lateStageRoute'&&msg.type==='PM_STAGE'&&msg.phase==='submitting')
           location.pathname='/g/'+project+'/c/other-chat';
+        if(mode==='lateRateLimit'&&msg.type==='PM_STAGE'&&msg.phase==='submitting')
+          limitVisible=true;
         return{ok:true};
       }
     }
@@ -163,6 +168,27 @@ async function until(check,label,ms=2500){
   assert.equal(projectHealth.projectId,project);
   assert.equal(projectHealth.composerReady,true);
   assert.equal(projectHealth.effort,'High');
+
+  const limited=environment('rateLimit');
+  const limitedHealth=limited.receive({type:'PM_HEALTH'});
+  assert.match(limitedHealth.blocked,/usage limit/i);
+  const limitedReady=limited.receive({type:'PM_READY',pid:project,cid:'chat-1'});
+  assert.equal(limitedReady.ready,false);
+  assert.match(limitedReady.blocked,/usage limit/i);
+  limited.receive({type:'PM_APPLY',jobId:'limit-test',pid:project,cid:'chat-1',
+    attemptToken:'limited',prompt:'proceed methodically',effort:'High'});
+  await until(()=>limited.messages.some(m=>m.type==='PM_RESULT'),'usage limit result');
+  assert.equal(limited.messages.find(m=>m.type==='PM_RESULT').reasonCode,'rate-limit');
+  assert.equal(limited.clicks,0);
+
+  const lateLimit=environment('lateRateLimit');
+  lateLimit.receive({type:'PM_APPLY',jobId:'late-limit',pid:project,cid:'chat-1',
+    attemptToken:'late-limit',prompt:'proceed methodically',effort:'High'});
+  await until(()=>lateLimit.messages.some(m=>m.type==='PM_RESULT'),'late usage limit result');
+  const lateLimited=lateLimit.messages.find(m=>m.type==='PM_RESULT');
+  assert.equal(lateLimited.reasonCode,'rate-limit');
+  assert.equal(lateLimited.injected,true);
+  assert.equal(lateLimit.clicks,0,'limit surfaced before last click; no send');
 
   const draft=environment('draft');
   assert.equal(draft.receive({type:'PM_APPLY',jobId:'job2',pid:project,cid:'chat-1',attemptToken:'draft-token',prompt:'proceed methodically',effort:'High'}).accepted,true);
