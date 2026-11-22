@@ -215,7 +215,7 @@ function renderJob(job){
         'Preparing submission')+current+(job.current.stageDetail?' · '+job.current.stageDetail:'')+'…':
     job.status==='running'&&!job.current?'Discovered '+job.found+' chats. Waiting for more project rows or dispatch spacing…':
     job.status==='running'?'Working on chat '+Math.min((job.index||0)+1,job.target)+' of '+job.target+current:
-    job.status==='done'?(job.results||[]).some(r=>r.ledgerSaved===false)?
+    job.status==='done'?((job.results||[]).some(r=>r.ledgerSaved===false)?
       'Prompts were submitted, but at least one fleet mapping could not be saved. Inspect Recent activity.':
       job.config.mode==='fleet-start'?'Fleet seeded: '+job.completed+' verified specialist threads. Use Continue fleet next.':
       job.config.mode==='fleet-continue'?'Fleet continuation complete: '+job.completed+' workstreams advanced.':
