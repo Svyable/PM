@@ -182,7 +182,7 @@ function resultLabel(job){
   if(job.status==='running')return 'Dispatching prompts';
   if(job.status==='paused')return 'Paused — attention needed';
   if(job.status==='done')return job.completed===0?'No verified sends':
-    job.failed>0?'Finished with issues':'Dispatch completed';
+    job.failed>0||(job.results||[]).some(r=>r.ledgerSaved===false)?'Finished with issues':'Dispatch completed';
   if(job.status==='stopped')return 'Run stopped';
   return 'Run error';
 }
@@ -215,7 +215,9 @@ function renderJob(job){
         'Preparing submission')+current+(job.current.stageDetail?' · '+job.current.stageDetail:'')+'…':
     job.status==='running'&&!job.current?'Discovered '+job.found+' chats. Waiting for more project rows or dispatch spacing…':
     job.status==='running'?'Working on chat '+Math.min((job.index||0)+1,job.target)+' of '+job.target+current:
-    job.status==='done'?(job.config.mode==='fleet-start'?'Fleet seeded: '+job.completed+' verified specialist threads. Use Continue fleet next.':
+    job.status==='done'?(job.results||[]).some(r=>r.ledgerSaved===false)?
+      'Prompts were submitted, but at least one fleet mapping could not be saved. Inspect Recent activity.':
+      job.config.mode==='fleet-start'?'Fleet seeded: '+job.completed+' verified specialist threads. Use Continue fleet next.':
       job.config.mode==='fleet-continue'?'Fleet continuation complete: '+job.completed+' workstreams advanced.':
       'Finished. Review verified sends and uncertain attempts.'):
     job.status==='stopped'?'Remaining conversations were not launched.':'Review recent activity.');
