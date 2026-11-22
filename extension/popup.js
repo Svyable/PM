@@ -42,9 +42,10 @@ async function inspect(){
     // composer without clicking menus, changing settings or sending text.
     const ready=await message('PM_GET_HEALTH',{tabId:context.tabId});
     if(activeProjectId!==context.projectId||projectTabId!==context.tabId)return;
-    const ok=ready?.composerReady===true;
-    statusConnection(ok,ok?
-      'Project ready · '+(ready.effort?ready.effort+' selected':'effort not detected')+
+    const ok=ready?.composerReady===true&&!ready.blocked;
+    statusConnection(ok,ready.blocked?
+      'ChatGPT usage limit · PM will not dispatch':
+      ok?'Project ready · '+(ready.effort?ready.effort+' selected':'effort not detected')+
         (ready.generating?' · generating':''):
       'Project detected · waiting for ChatGPT composer');
   }catch(e){
