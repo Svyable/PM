@@ -302,6 +302,10 @@ async function launch(){
     let tab;
     try{tab=await chrome.tabs.create({url:item.url,active:false});}
     catch(e){setTimeout(()=>void finish(null,{ok:false,error:'Failed opening tab: '+error(e),reasonCode:'tab'},item),0);return;}
+    // Keep only the CURRENT PM-owned dispatch tab from being automatically
+    // discarded by Chrome Memory Saver. This does not bypass background
+    // timer throttling or change the user's browser-wide performance settings.
+    try{await chrome.tabs.update(tab.id,{autoDiscardable:false});}catch{}
     job.current={tabId:tab.id,chatId:item.id,title:item.title,phase:'waiting',startedAt:Date.now(),attemptToken:job.id+':'+job.index+':'+tab.id};
     job.nextAt=0;await save(job);
     // Start readiness polling immediately, even while the browser reports
@@ -569,6 +573,7 @@ async function finish(tabId,result,explicit=null){
     }
     await save(j);
     if(opened&&!j.config.keepTabs){try{await chrome.tabs.remove(opened);}catch{}}
+    else if(opened){try{await chrome.tabs.update(opened,{autoDiscardable:true});}catch{}}
     if(j.status==='done'||j.status==='stopped')await clearWatchdog();
     if(runnable(j))setTimeout(()=>void launch(),Math.max(0,j.nextAt-Date.now()));
     });
