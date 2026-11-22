@@ -28,6 +28,14 @@ li{padding:10px}
 <form id="composer-form">
 <div contenteditable="true" class="ProseMirror" role="textbox"
  data-composer-markdown="" aria-label="Ask ChatGPT"><p></p></div>
+<button type="button" id="effort-trigger" data-selected-reasoning-effort="Medium">
+<span class="ModelPickerTriggerModelGroup">Medium</span></button>
+<div id="effort-menu" hidden>
+<button type="button" role="menuitem" data-effort="Instant">Instant</button>
+<button type="button" role="menuitem" data-effort="Medium">Medium</button>
+<button type="button" role="menuitem" data-effort="High">High</button>
+<button type="button" role="menuitem" data-effort="Extra High">Extra High</button>
+</div>
 <button type="submit" data-testid="send-button" aria-label="Send prompt">Send</button>
 </form>
 <div id="messages"></div>
@@ -39,6 +47,16 @@ li{padding:10px}
 const form=document.getElementById('composer-form');
 const editor=form.querySelector('[contenteditable]');
 window.__pmFixture={submissions:0};
+const effortTrigger=document.getElementById('effort-trigger');
+const effortMenu=document.getElementById('effort-menu');
+effortTrigger.addEventListener('click',()=>{effortMenu.hidden=!effortMenu.hidden;});
+effortMenu.addEventListener('click',event=>{
+  const option=event.target.closest('[data-effort]');
+  if(!option)return;
+  effortTrigger.setAttribute('data-selected-reasoning-effort',option.dataset.effort);
+  effortTrigger.querySelector('.ModelPickerTriggerModelGroup').textContent=option.dataset.effort;
+  effortMenu.hidden=true;
+});
 form.addEventListener('submit',event=>{
   event.preventDefault();
   const prompt=editor.innerText.trim();
@@ -150,10 +168,11 @@ try{
 
   const health=await send('PM_GET_HEALTH',{tabId:projectTabId});
   assert.equal(health.composerReady,true,'real browser recognizes Project composer');
+  assert.equal(health.effort,'Medium','live effort picker is observed before dispatch');
 
   const existing=await send('PM_START',{tabId:projectTabId,config:{
     mode:'existing',target:1,newCount:0,prompt:'PM browser smoke: continue existing.',
-    effort:'Keep current',delaySeconds:2,loadTimeoutSeconds:30,keepTabs:true
+    effort:'High',delaySeconds:2,loadTimeoutSeconds:30,keepTabs:true
   }});
   assert.equal(existing.ok,true,JSON.stringify(existing));
   const continued=await waitDone('existing chat send');
@@ -165,11 +184,13 @@ try{
   assert.ok(existingPages.length>0,'existing conversation opened in browser');
   const sent=await existingPages.at(-1).locator('[data-message-author-role="user"]').allTextContents();
   assert.deepEqual(sent,['PM browser smoke: continue existing.']);
+  assert.equal(await existingPages.at(-1).locator('#effort-trigger').getAttribute('data-selected-reasoning-effort'),
+    'High','PM actually selects High in the live Chromium picker');
 
   const seeded=await send('PM_START',{tabId:projectTabId,config:{
     mode:'fleet-start',target:1,newCount:1,fleetTemplate:'brainswarm',
     mission:'Research a safe and reproducible browser extension quality process.',
-    prompt:'proceed methodically',effort:'Keep current',delaySeconds:2,
+    prompt:'proceed methodically',effort:'High',delaySeconds:2,
     loadTimeoutSeconds:30,keepTabs:true
   }});
   assert.equal(seeded.ok,true,JSON.stringify(seeded));
@@ -182,7 +203,7 @@ try{
   assert.equal(fleetInfo.fleet.threads.length,1);
   assert.equal(fleetInfo.fleet.threads[0].roleName,'Systems Architect');
 
-  console.log('PM Chromium smoke PASSED: Project health, real ProseMirror edit, exactly one Send click,');
+  console.log('PM Chromium smoke PASSED: Project health, High picker, ProseMirror edit, exactly one Send click,');
   console.log('verified existing thread + new role-specific Project chat + locally saved fleet ledger.');
 }finally{
   await context?.close();
