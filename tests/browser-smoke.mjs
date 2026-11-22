@@ -4,15 +4,16 @@
  * MV3 extension to exercise browser content scripts + worker + actual clicks.
  */
 import assert from 'node:assert/strict';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {mkdtemp,rm,cp,readFile,writeFile} from 'node:fs/promises';
+import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {resolve} from 'node:path';
 import {chromium} from 'playwright';
 
 const projectId='g-p-browserfixture';
-const projectUrl='https://chatgpt.com/g/'+projectId+'/project';
+let projectUrl;
 const existingId='thread-one';
-const existingUrl='https://chatgpt.com/g/'+projectId+'/c/'+existingId;
+let existingUrl;
 const fixtureHtml=String.raw`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>PM ChatGPT fixture</title>
 <style>
@@ -55,17 +56,42 @@ form.addEventListener('submit',event=>{
 });
 </script></body></html>`;
 
+// Chromium's extension-created background tabs can bypass Playwright route
+// interception. Serve the fixture from 127.0.0.1 and rewrite ONLY the
+// origin in a temporary test copy; production extension files are untouched.
 const root=resolve('extension');
 const profile=await mkdtemp(resolve(tmpdir(),'pm-browser-smoke-'));
+const server=createServer((req,res)=>{
+  res.writeHead(200,{'content-type':'text/html; charset=utf-8'});
+  res.end(fixtureHtml);
+});
+await new Promise(done=>server.listen(0,'127.0.0.1',done));
+const port=server.address().port,origin='http://127.0.0.1:'+port;
+projectUrl=origin+'/g/'+projectId+'/project';
+existingUrl=origin+'/g/'+projectId+'/c/'+existingId;
+const unpacked=resolve(profile,'test-extension');
+await cp(root,unpacked,{recursive:true});
+const regexFrom=String.raw`https:\/\/chatgpt\.com`;
+const regexTo=String.raw`http:\/\/127\.0\.0\.1:`+port;
+for(const file of ['background.js','content.js','project-panel.js','popup.js','panel.js']){
+  const full=resolve(unpacked,file);
+  let code=await readFile(full,'utf8');
+  code=code.replaceAll('https://chatgpt.com/*','http://127.0.0.1/*')
+    .replaceAll('https://chatgpt.com',origin)
+    .replaceAll(regexFrom,regexTo);
+  await writeFile(full,code);
+}
+const manifestFile=resolve(unpacked,'manifest.json');
+const manifest=JSON.parse(await readFile(manifestFile,'utf8'));
+manifest.host_permissions=['http://127.0.0.1/*'];
+for(const script of manifest.content_scripts)script.matches=['http://127.0.0.1/*'];
+await writeFile(manifestFile,JSON.stringify(manifest));
 let context;
 try{
   context=await chromium.launchPersistentContext(profile,{
     headless:false,viewport:{width:1320,height:920},
-    args:['--no-sandbox','--disable-extensions-except='+root,'--load-extension='+root]
+    args:['--no-sandbox','--disable-extensions-except='+unpacked,'--load-extension='+unpacked]
   });
-  await context.route(/^https:\/\/chatgpt\.com\//,route=>
-    route.fulfill({status:200,contentType:'text/html; charset=utf-8',body:fixtureHtml})
-  );
   let worker=context.serviceWorkers()[0];
   if(!worker)worker=await context.waitForEvent('serviceworker',{timeout:20000});
   const extensionId=new URL(worker.url()).hostname;
@@ -160,5 +186,6 @@ try{
   console.log('verified existing thread + new role-specific Project chat + locally saved fleet ledger.');
 }finally{
   await context?.close();
+  await new Promise(done=>server.close(done));
   await rm(profile,{recursive:true,force:true});
 }
