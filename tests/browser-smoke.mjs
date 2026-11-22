@@ -1,0 +1,143 @@
+/**
+ * PM real-Chromium smoke, with a synthetic ChatGPT-compatible DOM.
+ * NO real ChatGPT login or network calls. Run under xvfb with an unpacked
+ * MV3 extension to exercise browser content scripts + worker + actual clicks.
+ */
+import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {resolve} from 'node:path';
+import {chromium} from 'playwright';
+
+const projectId='g-p-browserfixture';
+const projectUrl='https://chatgpt.com/g/'+projectId+'/project';
+const existingId='thread-one';
+const existingUrl='https://chatgpt.com/g/'+projectId+'/c/'+existingId;
+const fixtureHtml=String.raw`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>PM ChatGPT fixture</title>
+<style>
+body{font-family:system-ui;background:#101218;color:#eee;padding:32px}
+main{max-width:800px;margin:auto}
+form{background:#252832;border-radius:20px;padding:20px}
+[contenteditable]{background:#1b1d23;min-height:64px;border:1px solid #4b536b;outline:0;padding:12px}
+button{border-radius:8px;padding:10px;cursor:pointer}
+li{padding:10px}
+</style></head>
+<body><main><h1>PM Browser Project</h1>
+<form id="composer-form">
+<div contenteditable="true" class="ProseMirror" role="textbox"
+ data-composer-markdown="" aria-label="Ask ChatGPT"><p></p></div>
+<button type="submit" data-testid="send-button" aria-label="Send prompt">Send</button>
+</form>
+<div id="messages"></div>
+<ul id="project-conversations">
+<li class="group/project-chat"><a href="/g/g-p-browserfixture/c/thread-one">
+<span class="font-medium">Existing fixture conversation</span></a></li>
+</ul></main>
+<script>
+const form=document.getElementById('composer-form');
+const editor=form.querySelector('[contenteditable]');
+window.__pmFixture={submissions:0};
+form.addEventListener('submit',event=>{
+  event.preventDefault();
+  const prompt=editor.innerText.trim();
+  if(!prompt)return;
+  window.__pmFixture.submissions++;
+  if(location.pathname.endsWith('/project')){
+    history.pushState({},'', '/g/g-p-browserfixture/c/seeded-fixture-'+window.__pmFixture.submissions);
+  }
+  const turn=document.createElement('div');
+  turn.setAttribute('data-message-author-role','user');
+  turn.setAttribute('data-message-id','fixture-'+window.__pmFixture.submissions);
+  turn.className='user-turn';turn.textContent=prompt;
+  document.getElementById('messages').append(turn);
+  editor.replaceChildren(document.createElement('p'));
+});
+</script></body></html>`;
+
+const root=resolve('extension');
+const profile=await mkdtemp(resolve(tmpdir(),'pm-browser-smoke-'));
+let context;
+try{
+  context=await chromium.launchPersistentContext(profile,{
+    headless:false,viewport:{width:1320,height:920},
+    args:['--no-sandbox','--disable-extensions-except='+root,'--load-extension='+root]
+  });
+  await context.route(/^https:\/\/chatgpt\.com\//,route=>
+    route.fulfill({status:200,contentType:'text/html; charset=utf-8',body:fixtureHtml})
+  );
+  let worker=context.serviceWorkers()[0];
+  if(!worker)worker=await context.waitForEvent('serviceworker',{timeout:20000});
+  const extensionId=new URL(worker.url()).hostname;
+  assert.ok(extensionId,'Extension service worker must be registered');
+
+  const projectPage=await context.newPage();
+  await projectPage.goto(projectUrl,{waitUntil:'domcontentloaded'});
+  const extensionPage=await context.newPage();
+  await extensionPage.goto('chrome-extension://'+extensionId+'/panel.html',{waitUntil:'domcontentloaded'});
+  const projectTabId=await extensionPage.evaluate(async(url)=>{
+    const tabs=await chrome.tabs.query({});
+    return tabs.find(t=>t.url===url)?.id??null;
+  },projectUrl);
+  assert.ok(Number.isInteger(projectTabId),'Chrome extension sees Project overview tab');
+
+  async function send(type,payload={}){
+    return extensionPage.evaluate(async({type,payload})=>{
+      return await chrome.runtime.sendMessage({type,...payload});
+    },{type,payload});
+  }
+  async function waitDone(label,timeout=30000){
+    const start=Date.now();
+    while(Date.now()-start<timeout){
+      const state=await send('PM_GET_JOB');
+      if(state.job?.status==='done')return state.job;
+      if(['error','paused','stopped'].includes(state.job?.status))
+        throw Error(label+' halted: '+JSON.stringify({
+          status:state.job.status,error:state.job.error,pauseReason:state.job.pauseReason,
+          current:state.job.current,results:state.job.results
+        }));
+      await new Promise(r=>setTimeout(r,220));
+    }
+    throw Error('Timed out waiting for '+label);
+  }
+
+  const health=await send('PM_GET_HEALTH',{tabId:projectTabId});
+  assert.equal(health.composerReady,true,'real browser recognizes Project composer');
+
+  const existing=await send('PM_START',{tabId:projectTabId,config:{
+    mode:'existing',target:1,newCount:0,prompt:'PM browser smoke: continue existing.',
+    effort:'Keep current',delaySeconds:2,loadTimeoutSeconds:30,keepTabs:true
+  }});
+  assert.equal(existing.ok,true,JSON.stringify(existing));
+  const continued=await waitDone('existing chat send');
+  assert.equal(continued.completed,1);
+  assert.equal(continued.results.length,1);
+  assert.equal(continued.results[0].ok,true);
+  assert.equal(continued.results[0].id,existingId);
+  const existingPages=context.pages().filter(p=>p.url()===existingUrl);
+  assert.ok(existingPages.length>0,'existing conversation opened in browser');
+  const sent=await existingPages.at(-1).locator('[data-message-author-role="user"]').allTextContents();
+  assert.deepEqual(sent,['PM browser smoke: continue existing.']);
+
+  const seeded=await send('PM_START',{tabId:projectTabId,config:{
+    mode:'fleet-start',target:1,newCount:1,fleetTemplate:'brainswarm',
+    mission:'Research a safe and reproducible browser extension quality process.',
+    prompt:'proceed methodically',effort:'Keep current',delaySeconds:2,
+    loadTimeoutSeconds:30,keepTabs:true
+  }});
+  assert.equal(seeded.ok,true,JSON.stringify(seeded));
+  const fleet=await waitDone('fleet new chat send');
+  assert.equal(fleet.completed,1);
+  assert.equal(fleet.results[0].ok,true);
+  assert.equal(fleet.results[0].kind,'new');
+  assert.equal(fleet.results[0].id,'seeded-fixture-1');
+  const fleetInfo=await send('PM_GET_FLEET',{tabId:projectTabId});
+  assert.equal(fleetInfo.fleet.threads.length,1);
+  assert.equal(fleetInfo.fleet.threads[0].roleName,'Systems Architect');
+
+  console.log('PM Chromium smoke PASSED: Project health, real ProseMirror edit, exactly one Send click,');
+  console.log('verified existing thread + new role-specific Project chat + locally saved fleet ledger.');
+}finally{
+  await context?.close();
+  await rm(profile,{recursive:true,force:true});
+}
