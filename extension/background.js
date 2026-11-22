@@ -1,9 +1,9 @@
-/* PM — Proceed Methodically 0.11 | Chrome MV3 coordinator
+/* PM — Proceed Methodically 0.12 | Chrome MV3 coordinator
  * Single bounded queue; never retries an uncertain send.
  */
 'use strict';
 importScripts('fleets.js');
-const VERSION='0.11.1', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
+const VERSION='0.12.0', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
 const PROJECT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/project\/?(?:[?#].*)?$/;
 const CHAT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/c\/([a-zA-Z0-9-]+)\/?$/;
 const DEFAULTS={mode:'existing',newCount:1,target:6,prompt:'proceed methodically',mission:'',fleetTemplate:'brainswarm',effort:'High',delaySeconds:2,loadTimeoutSeconds:180,keepTabs:true};
@@ -209,7 +209,7 @@ async function findProject(preferredTabId=null){
   const job=await load();
   const running=job&&['running','scanning','paused'].includes(job.status)
     ?projects.find(t=>t.id===job.projectTabId):null;
-  const tab=activeProject||related||preferred||running||projects[0];
+  const tab=running||activeProject||related||preferred||projects[0];
   return{ok:true,tabId:tab?.id??null,projectId:projectFromUrl(tab?.url),
     status:tab?'ready':'no-project',
     message:tab?'Project ready':'Open a ChatGPT Project overview to start'};
@@ -438,6 +438,14 @@ async function finish(tabId,result,explicit=null){
       await save(j);return;
     }
     if(result.reasonCode==='wrong-chat'&&!result.uncertain){
+      // Navigation after prompt insertion may leave an unsent draft behind.
+      // Never auto-restore and inject again until the operator has inspected.
+      if(result.injected){
+        j.status='paused';j.current.phase='waiting';
+        j.current.waitError=error(result.error);
+        j.pauseReason='ChatGPT changed conversations after PM inserted a draft. No Send was clicked. Inspect the affected tab and clear the unsent draft before Resume.';
+        await save(j);return;
+      }
       // The adapter guarantees Send was NOT clicked. A transient SPA route
       // change can therefore be corrected safely without advancing the queue.
       // Keep the same tab/chat and rotate the token to reject stale responses.
@@ -475,13 +483,21 @@ async function finish(tabId,result,explicit=null){
       readyWaitMs:j.current?.dispatchedAt?Math.max(0,j.current.dispatchedAt-j.current.startedAt):null,
       confirmationWaitMs:j.current?.dispatchedAt?Math.max(0,Date.now()-j.current.dispatchedAt):null,
       routeRepairs:j.current?.routeRepairs||0,
+      lastStage:j.current?.stage||'waiting',
       submitMethod:['button','form','enter'].includes(result.submitMethod)?result.submitMethod:null};
     j.results.push(row);
     if(row.ok&&row.kind==='new'){
       void updateCatalog(j.projectId,[{id:row.id,url:row.url,title:row.title}],false);
     }
+    let ledgerError=null;
     if(row.ok&&j.config.mode.startsWith('fleet-')){
-      await recordFleetSuccess(j,item,row);
+      try{
+        await recordFleetSuccess(j,item,row);
+        row.ledgerSaved=true;
+      }catch(e){
+        ledgerError=error(e);row.ledgerSaved=false;
+        row.warning='Prompt verified, but its fleet role mapping could not be saved locally: '+ledgerError;
+      }
     }
     if(j.results.length>1000)j.results.shift();
     if(row.ok){j.completed++;j.consecutiveFailures=0;}
@@ -493,7 +509,10 @@ async function finish(tabId,result,explicit=null){
     const opened=j.current?.tabId;j.current=null;
     // A potentially sent message always requires explicit attention,
     // including when it was the LAST item in the queue.
-    if(row.uncertain&&j.status!=='stopped'){
+    if(ledgerError&&j.status!=='stopped'){
+      j.status='paused';
+      j.pauseReason='The prompt was submitted, but PM could not save its fleet role mapping. Inspect the conversation and browser storage before Resume; PM will not resend it.';
+    }else if(row.uncertain&&j.status!=='stopped'){
       j.status='paused';
       j.pauseReason='Unconfirmed send for '+row.title+'. Inspect that conversation before acknowledging this run; PM will not retry it automatically.';
     }else if(j.index>=j.queue.length&&j.scanComplete&&j.status!=='stopped'){
@@ -639,17 +658,22 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
       {scanning:m.type!=='PM_INVENTORY_DONE',step:Number(m.step)||0});
     return{ok:true};
   })());
-  if(m.type==='PM_STAGE')return reply((async()=>{
+  if(m.type==='PM_STAGE')return reply(withJobLock(async()=>{
     const j=await load();
     if(j?.id!==m.jobId||j.current?.tabId!==s.tab?.id||
-       j.current.chatId!==m.chatId||j.current.attemptToken!==m.attemptToken)return{ok:false};
-    const accepted=['preparing','injected','submitting','verifying'];
-    if(!accepted.includes(m.phase))return{ok:false};
+       j.current.chatId!==m.chatId||j.current.attemptToken!==m.attemptToken||
+       j.current.phase!=='sending'||!['running','paused'].includes(j.status))return{ok:false};
+    const stages=['preparing','injected','submitting','verifying'];
+    const index=stages.indexOf(m.phase);
+    if(index<0||index<stages.indexOf(j.current.stage))return{ok:false};
     j.current.stage=m.phase;j.current.stageDetail=error(m.detail||'');
     j.current.stageAt=Date.now();
+    if(m.phase==='submitting'&&Number.isInteger(m.beforeCount)&&Number.isInteger(m.beforeMatching)){
+      j.current.proofBaseline={beforeCount:m.beforeCount,beforeMatching:m.beforeMatching};
+    }
     await save(j);
     return{ok:true};
-  })());
+  }));
   if(m.type==='PM_RESULT')return reply((async()=>{
     const j=await load();
     if(j?.id!==m.jobId||j.current?.tabId!==s.tab?.id||j.current.chatId!==m.chatId||j.current.attemptToken!==m.attemptToken||j.current.phase!=='sending')return{ok:false};
@@ -663,7 +687,8 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
       }
     }
     await finish(s.tab.id,{ok:verified,uncertain,reasonCode,error:errorText,
-      submitMethod:m.submitMethod,createdChatId:m.createdChatId,createdUrl:m.createdUrl});
+      injected:m.injected===true,submitMethod:m.submitMethod,
+      createdChatId:m.createdChatId,createdUrl:m.createdUrl});
     return{ok:true};
   })());
 });
