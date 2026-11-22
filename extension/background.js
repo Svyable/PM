@@ -419,6 +419,40 @@ async function dispatch(tabId){
     }
   }finally{dispatchingTabs.delete(tabId);}
 }
+// A full-page navigation can destroy the original content script immediately
+// after Send. Observe the destination page read-only using a baseline saved
+// BEFORE the click, rather than replaying any submission.
+const verifyingTabs=new Set();
+async function verifyActiveSend(tabId){
+  if(verifyingTabs.has(tabId))return false;
+  verifyingTabs.add(tabId);
+  try{
+    const j=await load(),current=j?.current;
+    if(!j||!['running','paused'].includes(j.status)||current?.phase!=='sending'||
+       current.tabId!==tabId||!current.proofBaseline)return false;
+    const item=j.queue[j.index],tab=await chrome.tabs.get(tabId).catch(()=>null);
+    const route=chatFromUrl(tab?.url);
+    if(!route||route.projectId!==j.projectId||
+       (item.kind!=='new'&&route.chatId!==item.id))return false;
+    const a=await adapter(tabId);
+    if(a.chat?.projectId!==j.projectId||a.chat?.chatId!==route.chatId)return false;
+    const witness=await chrome.tabs.sendMessage(tabId,{
+      type:'PM_VERIFY_ATTEMPT',pid:j.projectId,cid:item.id,
+      kind:item.kind==='new'?'new':'existing',
+      prompt:item.prompt||j.config.prompt,...current.proofBaseline
+    });
+    if(!witness?.verified||witness.chatId!==route.chatId)return false;
+    const latest=await load();
+    if(latest?.id!==j.id||!currentOwned(latest,tabId,current.attemptToken,item.id)||
+       latest.current?.phase!=='sending')return false;
+    await finish(tabId,{ok:true,reasonCode:'sent',submitMethod:'observed',
+      createdChatId:item.kind==='new'?route.chatId:undefined,
+      createdUrl:item.kind==='new'?tab.url:undefined,
+      verificationSource:'destination'});
+    return true;
+  }catch{return false;}
+  finally{verifyingTabs.delete(tabId);}
+}
 async function finish(tabId,result,explicit=null){
   // Serialize competing callbacks rather than silently losing the second result.
   let release;
@@ -484,7 +518,8 @@ async function finish(tabId,result,explicit=null){
       confirmationWaitMs:j.current?.dispatchedAt?Math.max(0,Date.now()-j.current.dispatchedAt):null,
       routeRepairs:j.current?.routeRepairs||0,
       lastStage:j.current?.stage||'waiting',
-      submitMethod:['button','form','enter'].includes(result.submitMethod)?result.submitMethod:null};
+      verificationSource:result.verificationSource==='destination'?'destination':'original',
+      submitMethod:['button','form','enter','observed'].includes(result.submitMethod)?result.submitMethod:null};
     j.results.push(row);
     if(row.ok&&row.kind==='new'){
       void updateCatalog(j.projectId,[{id:row.id,url:row.url,title:row.title}],false);
@@ -578,6 +613,17 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
     return{ok:true,tabId:s.tab.id,projectId:pid};
   })());
   if(m.type==='PM_GET_OVERVIEW')return reply(popup?overview(m.tabId):Promise.reject(Error('Extension panel only.')));
+  if(m.type==='PM_GET_HEALTH')return reply(popup?(async()=>{
+    const tab=await chrome.tabs.get(m.tabId),pid=projectFromUrl(tab.url);
+    if(!pid)throw Error('Open a ChatGPT Project overview.');
+    const a=await adapter(tab.id);
+    if(a.projectId!==pid)throw Error('ChatGPT is still navigating to this Project.');
+    const state=await chrome.tabs.sendMessage(tab.id,{type:'PM_HEALTH'});
+    if(!state?.ok||state.projectId!==pid)throw Error('Project composer not ready.');
+    return{ok:true,projectId:pid,composerReady:!!state.composerReady,
+      effort:state.effort||null,generating:!!state.generating,
+      draftPresent:!!state.draftPresent};
+  })():Promise.reject(Error('Extension panel only.')));
   if(m.type==='PM_INVENTORY_REFRESH')return reply((async()=>{
     if(!popup)throw Error('Extension panel only.');
     const tab=await chrome.tabs.get(m.tabId),pid=projectFromUrl(tab.url);
@@ -692,7 +738,15 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
     return{ok:true};
   })());
 });
-chrome.tabs.onUpdated.addListener((id,change)=>{if(change.status==='complete'||typeof change.url==='string')void dispatch(id);});
+chrome.tabs.onUpdated.addListener((id,change)=>{
+  if(change.status==='complete'||typeof change.url==='string'){
+    void dispatch(id);
+    // A newly routed chat may have committed Send just before the originating
+    // content script was destroyed. Never click again: inspect the destination.
+    setTimeout(()=>void verifyActiveSend(id),1000);
+    setTimeout(()=>void verifyActiveSend(id),3500);
+  }
+});
 chrome.tabs.onActivated.addListener(info=>{void recordVisit(info.tabId);});
 chrome.tabs.onRemoved.addListener(id=>{void(async()=>{
   const j=await load();
@@ -711,8 +765,14 @@ chrome.alarms.onAlarm.addListener(a=>{if(a.name!==ALARM)return;void(async()=>{
       if(Date.now()-j.current.startedAt>(j.config.loadTimeoutSeconds||180)*1000)
         await pauseReadiness(j.current.tabId,j.current.attemptToken,j.current.chatId,'readiness deadline exceeded');
       else void dispatch(j.current.tabId);
-    }else if(j.current.phase==='sending'&&Date.now()-j.current.dispatchedAt>90000){
-      await finish(j.current.tabId,{ok:false,uncertain:true,reasonCode:'unconfirmed',error:'Timed out waiting for an acknowledged chat send. Inspect before retrying.'});
+    }else if(j.current.phase==='sending'){
+      if(j.current.proofBaseline)await verifyActiveSend(j.current.tabId);
+      const latest=await load();
+      if(latest?.id===j.id&&latest.current?.tabId===j.current.tabId&&
+         latest.current?.phase==='sending'&&Date.now()-latest.current.dispatchedAt>90000){
+        await finish(j.current.tabId,{ok:false,uncertain:true,reasonCode:'unconfirmed',
+          error:'Timed out waiting for a verified user message. Inspect before any retry.'});
+      }
     }
   }else if(j.status==='running')await launch();
 })();});
