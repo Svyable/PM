@@ -369,6 +369,10 @@ async function dispatch(tabId){
               ?{type:'PM_NEW_READY',pid}
               :{type:'PM_READY',pid,cid});
             if(r?.ready===true)break;
+            if(r?.blocked){
+              await pauseReadiness(tabId,token,cid,'ChatGPT reports a usage or rate limit: '+error(r.blocked));
+              return;
+            }
             lastReason=r?.busy?'ChatGPT is still generating; PM will wait before sending the next instruction':
               newChat?'the Project new-chat composer is not ready':'the conversation composer is not available yet';
           }
@@ -469,6 +473,13 @@ async function finish(tabId,result,explicit=null){
     const item=explicit||j.queue[j.index];if(!item)return;
     if(tabId!==null&&j.current?.chatId!==item.id){
       j.status='paused';j.pauseReason='Queue identity changed while processing a tab. No further chats will launch.';
+      await save(j);return;
+    }
+    if(result.reasonCode==='rate-limit'&&!result.uncertain){
+      j.status='paused';j.current.phase='waiting';
+      j.current.waitError=error(result.error);
+      j.pauseReason='ChatGPT is enforcing a usage or rate limit. PM has stopped dispatching and will not bypass it.'+
+        (result.injected?' An unsent draft may remain; inspect and clear it before Resume.':'');
       await save(j);return;
     }
     if(result.reasonCode==='wrong-chat'&&!result.uncertain){
@@ -622,7 +633,7 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
     if(!state?.ok||state.projectId!==pid)throw Error('Project composer not ready.');
     return{ok:true,projectId:pid,composerReady:!!state.composerReady,
       effort:state.effort||null,generating:!!state.generating,
-      draftPresent:!!state.draftPresent};
+      draftPresent:!!state.draftPresent,blocked:state.blocked||null};
   })():Promise.reject(Error('Extension panel only.')));
   if(m.type==='PM_INVENTORY_REFRESH')return reply((async()=>{
     if(!popup)throw Error('Extension panel only.');
