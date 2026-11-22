@@ -19,7 +19,7 @@ async function waitFor(check,label,timeout=12000){
   assert.ok(check(),'Timed out waiting for '+label);
 }
 function setup(options={}){
-  const storage={},tabs=new Map(),injected=new Set(),attempts=[],opened=[];
+  const storage={},tabs=new Map(),injected=new Set(),attempts=[],opened=[],discardChanges=[];
   tabs.set(1,{id:1,windowId:42,url:projectURL,status:'complete',route:null,ready:true});
   let listener,onUpdated,onRemoved,onActivated,nextTabId=1,injections=0,sideOpens=0,repairUpdates=0,busyReadyChecks=0,limitReadyChecks=0;
   const chrome={
@@ -51,6 +51,11 @@ function setup(options={}){
       async update(id,opts){
         const tab=tabs.get(id);
         if(!tab)throw Error('Tab not found');
+        if(typeof opts.autoDiscardable==='boolean'&&opts.url===undefined){
+          tab.autoDiscardable=opts.autoDiscardable;
+          discardChanges.push({id,value:opts.autoDiscardable});
+          return tab;
+        }
         repairUpdates++;
         tab.url=opts.url;
         tab.route=opts.url.split('/').at(-1);
@@ -174,7 +179,7 @@ function setup(options={}){
   }
   const prefs={target:2,prompt:'proceed methodically',effort:'High',
     delaySeconds:2,loadTimeoutSeconds:180,keepTabs:true};
-  return{request,prefs,storage,attempts,opened,tabs,
+  return{request,prefs,storage,attempts,opened,tabs,discardChanges,
     updateTab(tabId,change={status:'complete'}){onUpdated?.(tabId,change);},
     activate(tabId){onActivated?.({tabId});},
     get injections(){return injections;},get sideOpens(){return sideOpens;},
@@ -189,6 +194,10 @@ function setup(options={}){
   assert.equal(normal.attempts.length,2,'tab update must not double send');
   assert.equal(new Set(normal.attempts.map(a=>a.token)).size,2);
   assert.ok(normal.injections>=3,'dynamic injection should attach to each tab');
+  assert.equal(normal.discardChanges.filter(x=>x.value===false).length,2,
+    'only active PM-owned tabs should be protected against auto-discard');
+  assert.equal(normal.discardChanges.filter(x=>x.value===true).length,2,
+    'PM restores auto-discardability after each completed dispatch');
 
   const busy=setup({busyFirstReadies:2});
   await busy.request('PM_START',{tabId:1,config:busy.prefs});
