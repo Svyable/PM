@@ -30,6 +30,7 @@ jobs:
           node --check tests/adapter.mock.cjs
           node --check tests/coordinator.mock.cjs
           node --check tests/panel.mock.cjs
+          node --check tests/browser-smoke.mjs
       - name: Validate manifest and paths
         run: |
           node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('extension/manifest.json'));for(const p of ['background.js','content.js','popup.html','popup.css','popup.js','project-panel.js','panel.html','panel.css','panel.js','fleets.js',...Object.values(m.icons)]){if(!fs.existsSync('extension/'+p))throw Error('Missing: '+p)};if(m.host_permissions.join()!=='https://chatgpt.com/*')throw Error('Unexpected host permissions');if(!m.permissions.includes('sidePanel')||m.action.default_popup||m.side_panel?.default_path!=='panel.html')throw Error('Native side panel setup invalid');if(m.web_accessible_resources?.length)throw Error('Panel must not be exposed as a page iframe')"
