@@ -134,7 +134,7 @@ function setup(options={}){
             reasonCode:wrongRoute?'wrong-chat':uncertain?'unconfirmed':skipped?'draft':'sent',
             error:wrongRoute?'ChatGPT changed conversations before Send. Nothing was submitted.':uncertain?'No matching rendered user message':skipped?'Existing draft preserved':null,
             ...(creating?{createdChatId:created,createdUrl:tab.url}:{})
-          },id),20);
+          },id),options.resultDelayMs||20);
           return{accepted:true};
         }
         return{ok:true};
@@ -191,6 +191,30 @@ function setup(options={}){
   assert.ok(busy.busyReadyChecks>=3,'worker must poll until generation completes');
   assert.equal(busy.storage.pmJob.completed,2);
   assert.equal(busy.attempts.length,2,'no duplicate send while target is busy');
+
+  // Late and out-of-order status messages cannot regress the current stage
+  // or resurrect a completed job after its result has been saved.
+  const stageOrder=setup({resultDelayMs:150});
+  await stageOrder.request('PM_START',{tabId:1,config:{
+    ...stageOrder.prefs,target:1,mode:'new',newCount:1
+  }});
+  await waitFor(()=>stageOrder.storage.pmJob?.current?.phase==='sending','stage ownership',6000);
+  const owned=stageOrder.storage.pmJob.current;
+  assert.equal((await stageOrder.request('PM_STAGE',{
+    jobId:stageOrder.storage.pmJob.id,chatId:owned.chatId,attemptToken:owned.attemptToken,
+    phase:'verifying',detail:'test'
+  },owned.tabId)).ok,true);
+  assert.equal((await stageOrder.request('PM_STAGE',{
+    jobId:stageOrder.storage.pmJob.id,chatId:owned.chatId,attemptToken:owned.attemptToken,
+    phase:'preparing',detail:'late'
+  },owned.tabId)).ok,false);
+  assert.equal(stageOrder.storage.pmJob.current.stage,'verifying');
+  await waitFor(()=>stageOrder.storage.pmJob?.status==='done','stage race done',7500);
+  assert.equal((await stageOrder.request('PM_STAGE',{
+    jobId:stageOrder.storage.pmJob.id,chatId:owned.chatId,attemptToken:owned.attemptToken,
+    phase:'injected'
+  },owned.tabId)).ok,false,'no late stage write after finish');
+  assert.equal(stageOrder.storage.pmJob.current,null);
 
   const projectSelection=setup();
   const health=await projectSelection.request('PM_GET_HEALTH',{tabId:1});
