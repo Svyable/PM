@@ -1,7 +1,7 @@
 # PM v1.0 launch gate
 
 **State: NOT APPROVED FOR PUBLIC v1.0 RELEASE**
-**Candidate: 0.11.1**
+**Candidate: 0.12.0**
 **Prepared: November 18, 2026**
 
 Green automated tests demonstrate code paths, not authenticated ChatGPT compatibility or third-party authorization.
@@ -114,10 +114,21 @@ Keep the 0.7 installer on GitHub. Stop the run, inspect uncertain sends before m
 - [ ] If Send remains disabled, PM does not attempt Enter or falsely report success.
 - [ ] If Send is absent, only one Enter fallback is attempted and no ambiguous submission is automatically retried.
 
-### Submission reliability v0.11.1
+### Submission reliability v0.12.0
 - [ ] One real, signed-in ChatGPT send with exactly one new user turn, correct Project and effort.
 - [ ] Newly created role-specific chat has the exact first submitted prompt and a new verified ID.
 - [ ] Background dispatch works while user browses other tabs; no manual focus required under ordinary Chrome conditions.
 - [ ] An old identical user message re-rendering is not mistaken for a new submission.
 - [ ] Disabled Send does not trigger form/Enter fallback or a success state.
 - [ ] No duplicate submission after uncertainty, refresh, browser suspension or extension restart.
+
+### PM v0.12 prime-time regression gates
+
+- [ ] Side panel reports the actual Project composer state and effort without requiring Reconnect, and never enables launch based solely on a URL.
+- [ ] After a full navigation destroys the submitting content script, a NEW exact matching user turn can be confirmed from the destination page without any repeated Send.
+- [ ] Old or rerendered identical turns and stale stage messages cannot produce a false positive.
+- [ ] Chat navigation after prompt injection pauses, retaining the unsent draft for inspection rather than reinjecting automatically.
+- [ ] Chrome storage failure while saving a fleet role pauses with an explicit warning and never resends the verified prompt.
+- [ ] Visible ChatGPT usage/rate-limit notices block dispatch; user can resume only after the limit is gone.
+- [ ] Real signed-in Chrome: one existing-chat continuation AND one new Project fleet seed each produce exactly one verified user turn, with no manual tab focus.
+- [ ] Review extension permissions, privacy documentation, Chrome Web Store disclosures and applicable ChatGPT service rules before wider distribution.

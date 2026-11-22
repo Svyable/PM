@@ -19,9 +19,9 @@ async function waitFor(check,label,timeout=12000){
   assert.ok(check(),'Timed out waiting for '+label);
 }
 function setup(options={}){
-  const storage={},tabs=new Map(),injected=new Set(),attempts=[],opened=[];
+  const storage={},tabs=new Map(),injected=new Set(),attempts=[],opened=[],discardChanges=[];
   tabs.set(1,{id:1,windowId:42,url:projectURL,status:'complete',route:null,ready:true});
-  let listener,onUpdated,onRemoved,onActivated,nextTabId=1,injections=0,sideOpens=0,repairUpdates=0,busyReadyChecks=0;
+  let listener,onUpdated,onRemoved,onActivated,nextTabId=1,injections=0,sideOpens=0,repairUpdates=0,busyReadyChecks=0,limitReadyChecks=0;
   const chrome={
     runtime:{onMessage:{addListener(fn){listener=fn;}},onStartup:{addListener(){}},onInstalled:{addListener(){}}},
     sidePanel:{async setPanelBehavior(opts){assert.equal(opts.openPanelOnActionClick,true);},async open(opts){assert.equal(opts.windowId,42,'side panel must be window-wide, not tab-specific');assert.equal(opts.tabId,undefined);sideOpens++;}},
@@ -51,6 +51,11 @@ function setup(options={}){
       async update(id,opts){
         const tab=tabs.get(id);
         if(!tab)throw Error('Tab not found');
+        if(typeof opts.autoDiscardable==='boolean'&&opts.url===undefined){
+          tab.autoDiscardable=opts.autoDiscardable;
+          discardChanges.push({id,value:opts.autoDiscardable});
+          return tab;
+        }
         repairUpdates++;
         tab.url=opts.url;
         tab.route=opts.url.split('/').at(-1);
@@ -63,13 +68,22 @@ function setup(options={}){
         if(!injected.has(id))throw Error('Receiving end does not exist');
         const tab=tabs.get(id);if(!tab)throw Error('Tab not found');
         if(msg.type==='PM_PING'){
-          if(id===1||tab.url===projectURL)return{ok:true,version:'0.11.1',projectId:project,chat:null};
-          return{ok:true,version:'0.11.1',projectId:null,chat:{projectId:project,chatId:tab.route}};
+          if(id===1||tab.url===projectURL)return{ok:true,version:'0.12.0',projectId:project,chat:null};
+          return{ok:true,version:'0.12.0',projectId:null,chat:{projectId:project,chatId:tab.route}};
         }
         if(msg.type==='PM_CONTEXT')return{ok:true,projectId:project,count:2,chats,projectTitle:'/demo'};
+        if(msg.type==='PM_HEALTH')return{ok:true,projectId:project,composerReady:true,effort:'High',generating:false,draftPresent:false};
+        if(msg.type==='PM_VERIFY_ATTEMPT'){
+          const matched=tab.confirmedPrompt===msg.prompt;
+          return{ok:true,verified:!!matched&&Number.isInteger(msg.beforeCount)&&msg.beforeCount===0&&
+            Number.isInteger(msg.beforeMatching)&&msg.beforeMatching===0,
+            chatId:tab.route,projectId:project,createdUrl:tab.url};
+        }
         if(msg.type==='PM_READY'){
           const busy=!!(options.busyFirstReadies&&msg.cid==='chat-one'&&++busyReadyChecks<=options.busyFirstReadies);
-          return{ok:true,ready:tab.ready&&tab.route===msg.cid&&!busy,busy,
+          const blocked=!!(options.limitFirstReadies&&msg.cid==='chat-one'&&++limitReadyChecks<=options.limitFirstReadies);
+          return{ok:true,ready:tab.ready&&tab.route===msg.cid&&!busy&&!blocked,busy,
+            blocked:blocked?'You have reached your usage limit':null,
             chat:{projectId:project,chatId:tab.route}};
         }
         if(msg.type==='PM_NEW_READY'){
@@ -98,7 +112,8 @@ function setup(options={}){
             (options.uncertainSecond&&msg.cid==='chat-two')||
             (options.uncertainNew&&creating&&msg.cid==='new:0');
           const skipped=options.draftFirst&&msg.cid==='chat-one';
-          const wrongRoute=options.routeChangedBeforeSend&&msg.cid==='chat-one'&&!tab.routeFixedOnce;
+          const wrongRoute=(options.routeChangedBeforeSend||options.routeChangedAfterInsertion)&&
+            msg.cid==='chat-one'&&!tab.routeFixedOnce;
           if(wrongRoute){
             tab.routeFixedOnce=true;
             tab.url='https://chatgpt.com/g/'+project+'/c/chat-two';
@@ -108,15 +123,28 @@ function setup(options={}){
           if(creating){
             tab.route=created;
             tab.url='https://chatgpt.com/g/'+project+'/c/'+created;
+            if(options.lostAckNew)tab.confirmedPrompt=msg.prompt;
             setTimeout(()=>onUpdated?.(id,{url:tab.url}),0);
+          }
+          if(options.lostAckNew&&creating){
+            // Full navigation kills the original adapter before PM_RESULT.
+            setTimeout(()=>void request('PM_STAGE',{
+              jobId:msg.jobId,chatId:msg.cid,attemptToken:msg.attemptToken,
+              phase:'submitting',beforeCount:0,beforeMatching:0
+            },id),4);
+            return{accepted:true};
           }
           setTimeout(()=>void request('PM_RESULT',{
             jobId:msg.jobId,chatId:msg.cid,attemptToken:msg.attemptToken,
-            ok:!uncertain&&!skipped&&!wrongRoute,uncertain,
-            reasonCode:wrongRoute?'wrong-chat':uncertain?'unconfirmed':skipped?'draft':'sent',
-            error:wrongRoute?'ChatGPT changed conversations before Send. Nothing was submitted.':uncertain?'No matching rendered user message':skipped?'Existing draft preserved':null,
+            ok:!uncertain&&!skipped&&!wrongRoute&&
+              !(options.rateLimitAfterApply&&msg.cid==='chat-one'),uncertain,
+            injected:!!(options.routeChangedAfterInsertion&&wrongRoute)||!!(options.rateLimitAfterApply&&msg.cid==='chat-one'),
+            reasonCode:options.rateLimitAfterApply&&msg.cid==='chat-one'?'rate-limit':
+              wrongRoute?'wrong-chat':uncertain?'unconfirmed':skipped?'draft':'sent',
+            error:options.rateLimitAfterApply&&msg.cid==='chat-one'?'ChatGPT usage limit; nothing was submitted.':
+              wrongRoute?'ChatGPT changed conversations before Send. Nothing was submitted.':uncertain?'No matching rendered user message':skipped?'Existing draft preserved':null,
             ...(creating?{createdChatId:created,createdUrl:tab.url}:{})
-          },id),20);
+          },id),options.resultDelayMs||20);
           return{accepted:true};
         }
         return{ok:true};
@@ -127,7 +155,11 @@ function setup(options={}){
     },
     storage:{local:{
       async get(k){return Object.fromEntries((Array.isArray(k)?k:[k]).map(key=>[key,storage[key]]));},
-      async set(v){Object.assign(storage,v);}
+      async set(v){
+         if(options.failFleetLedger&&Object.prototype.hasOwnProperty.call(v,'pmProjectFleets'))
+           throw Error('Simulated Chrome storage quota error');
+         Object.assign(storage,v);
+       }
     }},
     scripting:{async executeScript({target}){injected.add(target.tabId);injections++;}},
     alarms:{async create(){},async clear(){},onAlarm:{addListener(){}}},
@@ -147,7 +179,11 @@ function setup(options={}){
   }
   const prefs={target:2,prompt:'proceed methodically',effort:'High',
     delaySeconds:2,loadTimeoutSeconds:180,keepTabs:true};
-  return{request,prefs,storage,attempts,opened,tabs,activate(tabId){onActivated?.({tabId});},get injections(){return injections;},get sideOpens(){return sideOpens;},get repairUpdates(){return repairUpdates;},get busyReadyChecks(){return busyReadyChecks;}};
+  return{request,prefs,storage,attempts,opened,tabs,discardChanges,
+    updateTab(tabId,change={status:'complete'}){onUpdated?.(tabId,change);},
+    activate(tabId){onActivated?.({tabId});},
+    get injections(){return injections;},get sideOpens(){return sideOpens;},
+    get repairUpdates(){return repairUpdates;},get busyReadyChecks(){return busyReadyChecks;}};
 }
 (async()=>{
   const normal=setup();
@@ -158,6 +194,10 @@ function setup(options={}){
   assert.equal(normal.attempts.length,2,'tab update must not double send');
   assert.equal(new Set(normal.attempts.map(a=>a.token)).size,2);
   assert.ok(normal.injections>=3,'dynamic injection should attach to each tab');
+  assert.equal(normal.discardChanges.filter(x=>x.value===false).length,2,
+    'only active PM-owned tabs should be protected against auto-discard');
+  assert.equal(normal.discardChanges.filter(x=>x.value===true).length,2,
+    'PM restores auto-discardability after each completed dispatch');
 
   const busy=setup({busyFirstReadies:2});
   await busy.request('PM_START',{tabId:1,config:busy.prefs});
@@ -166,7 +206,50 @@ function setup(options={}){
   assert.equal(busy.storage.pmJob.completed,2);
   assert.equal(busy.attempts.length,2,'no duplicate send while target is busy');
 
+  // Late and out-of-order status messages cannot regress the current stage
+  // or resurrect a completed job after its result has been saved.
+  const stageOrder=setup({resultDelayMs:150});
+  await stageOrder.request('PM_START',{tabId:1,config:{
+    ...stageOrder.prefs,target:1,mode:'new',newCount:1
+  }});
+  await waitFor(()=>stageOrder.storage.pmJob?.current?.phase==='sending','stage ownership',6000);
+  const owned=stageOrder.storage.pmJob.current;
+  assert.equal((await stageOrder.request('PM_STAGE',{
+    jobId:stageOrder.storage.pmJob.id,chatId:owned.chatId,attemptToken:owned.attemptToken,
+    phase:'verifying',detail:'test'
+  },owned.tabId)).ok,true);
+  assert.equal((await stageOrder.request('PM_STAGE',{
+    jobId:stageOrder.storage.pmJob.id,chatId:owned.chatId,attemptToken:owned.attemptToken,
+    phase:'preparing',detail:'late'
+  },owned.tabId)).ok,false);
+  assert.equal(stageOrder.storage.pmJob.current.stage,'verifying');
+  await waitFor(()=>stageOrder.storage.pmJob?.status==='done','stage race done',7500);
+  assert.equal((await stageOrder.request('PM_STAGE',{
+    jobId:stageOrder.storage.pmJob.id,chatId:owned.chatId,attemptToken:owned.attemptToken,
+    phase:'injected'
+  },owned.tabId)).ok,false,'no late stage write after finish');
+  assert.equal(stageOrder.storage.pmJob.current,null);
+
+  const limited=setup({limitFirstReadies:1});
+  await limited.request('PM_START',{tabId:1,config:limited.prefs});
+  await waitFor(()=>limited.storage.pmJob?.status==='paused','pause on ChatGPT usage limit',6000);
+  assert.equal(limited.attempts.length,0,'no Send under account limit');
+  assert.match(limited.storage.pmJob.pauseReason,/usage or rate limit/i);
+  assert.equal((await limited.request('PM_RESUME')).ok,true);
+  await waitFor(()=>limited.storage.pmJob?.status==='done','resume after limit clears',10000);
+  assert.equal(limited.storage.pmJob.completed,2);
+
+  const limitedAfterInput=setup({rateLimitAfterApply:true});
+  await limitedAfterInput.request('PM_START',{tabId:1,config:limitedAfterInput.prefs});
+  await waitFor(()=>limitedAfterInput.storage.pmJob?.status==='paused','late limit pauses',6000);
+  assert.equal(limitedAfterInput.storage.pmJob.index,0);
+  assert.match(limitedAfterInput.storage.pmJob.pauseReason,/usage or rate limit/i);
+
   const projectSelection=setup();
+  const health=await projectSelection.request('PM_GET_HEALTH',{tabId:1});
+  assert.equal(health.ok,true);
+  assert.equal(health.composerReady,true);
+  assert.equal(health.effort,'High');
   const found=await projectSelection.request('PM_FIND_PROJECT',{});
   assert.equal(found.ok,true);
   assert.equal(found.tabId,1);
@@ -186,6 +269,13 @@ function setup(options={}){
   assert.equal(repair.storage.pmJob.results[0].routeRepairs,1);
   assert.equal(repair.repairUpdates,1);
   assert.deepEqual(Array.from(repair.storage.pmJob.results,x=>x.queueId),['chat-one','chat-two']);
+
+  const draftRoute=setup({routeChangedAfterInsertion:true});
+  await draftRoute.request('PM_START',{tabId:1,config:draftRoute.prefs});
+  await waitFor(()=>draftRoute.storage.pmJob?.status==='paused','draft left after late navigation',6000);
+  assert.equal(draftRoute.storage.pmJob.index,0,'do not advance after unsent draft');
+  assert.equal(draftRoute.repairUpdates,0,'do not automatically reopen after injection');
+  assert.match(draftRoute.storage.pmJob.pauseReason,/unsent draft/i);
 
   const uncertain=setup({uncertainFirst:true});
   await uncertain.request('PM_START',{tabId:1,config:uncertain.prefs});
@@ -208,6 +298,17 @@ function setup(options={}){
   assert.ok(fresh.attempts.every(a=>a.kind==='new'));
   assert.equal(new Set(fresh.storage.pmJob.results.map(r=>r.id)).size,3);
   assert.ok(fresh.storage.pmJob.results.every(r=>r.kind==='new'&&r.url.includes('/g/'+project+'/c/generated-')));
+
+  // Full navigation may terminate the original adapter immediately after Send.
+  // Recover proof read-only from the destination without repeating a click.
+  const recovered=setup({lostAckNew:true});
+  await recovered.request('PM_START',{tabId:1,config:{...recovered.prefs,target:1,mode:'new',newCount:1}});
+  await waitFor(()=>recovered.storage.pmJob?.status==='done','destination-page verified new chat',9000);
+  assert.equal(recovered.storage.pmJob.completed,1);
+  assert.equal(recovered.storage.pmJob.results[0].verificationSource,'destination');
+  assert.equal(recovered.storage.pmJob.results[0].submitMethod,'observed');
+  assert.equal(recovered.attempts.length,1,'navigation witness must never repeat Send');
+  assert.equal(recovered.storage.pmJob.results[0].id,'generated-2');
 
   // Mixed mode continues the existing two chats then starts one new thread.
   const mixed=setup();
@@ -262,6 +363,20 @@ function setup(options={}){
   assert.equal(new Set(followups.map(a=>a.prompt)).size,3);
   assert.deepEqual(followups.map(a=>a.chatId),Array.from(ledger.threads,x=>x.id));
   assert.equal(seeded.storage.pmProjectFleets[project].cycle,1);
+
+  // If fleet mapping storage fails AFTER a verified Send, never resend.
+  const quota=setup({failFleetLedger:true});
+  await quota.request('PM_START',{tabId:1,config:{
+    ...quota.prefs,target:1,mode:'fleet-start',fleetTemplate:'brainswarm',mission:'Investigate a test mission.'
+  }});
+  await waitFor(()=>quota.storage.pmJob?.status==='paused','fleet storage warning',7000);
+  assert.equal(quota.storage.pmJob.completed,1);
+  assert.equal(quota.storage.pmJob.results[0].ledgerSaved,false);
+  assert.match(quota.storage.pmJob.results[0].warning,/could not be saved/i);
+  assert.equal(quota.attempts.length,1);
+  assert.equal((await quota.request('PM_RESUME')).ok,true);
+  await waitFor(()=>quota.storage.pmJob?.status==='done','resume without resending',3000);
+  assert.equal(quota.attempts.length,1);
 
   // Critical v1 gate: a final unconfirmed send must NOT display a green
   // completed run, even when all queued conversations have been attempted.

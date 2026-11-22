@@ -2,7 +2,7 @@
 
 **One mission. A fleet of specialized conversations.** PM is a local-first Chrome extension that can initialize a ChatGPT Project with role-specific threads, continue a saved fleet, or dispatch a single prompt across selected existing conversations.
 
-[**Download PM v0.11.1 candidate (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.11.1.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
+[**Download PM v0.12.0 candidate (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.12.0.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
 
 ## Install
 
@@ -13,6 +13,22 @@
 5. **Reload your existing ChatGPT Project tab** after installing or updating the extension. On its overview page (ending in `/project`), click the PM toolbar icon or the small lower-right PM launcher to open Chrome's native side panel. Try **1 conversation** first.
 
 No PM service account, backend, or telemetry.
+
+## PM 0.12 — Release-candidate reliability
+
+PM now checks the **live Project composer** before enabling Launch, without requiring a Reconnect button. The panel distinguishes a detected Project URL from a ready editor and shows ChatGPT's selected effort when observable.
+
+Its dispatcher saves a submission baseline **before clicking Send**. If the website navigates and destroys the original content script, PM can inspect the destination conversation for a genuinely new matching user message. This is read-only recovery: it **never clicks Send a second time**. A pre-send navigation *after* text has been inserted pauses instead of automatically reinjecting a draft.
+
+Dispatch status messages are serialized with the queue so late updates cannot resurrect completed sends. If a verified fleet send succeeds but the local role ledger cannot be saved, PM pauses and surfaces the storage problem instead of silently losing the mapping or resending.
+
+PM also respects visible ChatGPT usage/rate-limit notices and stops dispatch rather than trying to bypass an account limit. **No backend, no private ChatGPT API, no automated cross-thread message sharing.**
+
+For background reliability, PM temporarily marks only its **current dispatch tab** as non-discardable, then restores the tab's normal Chrome behavior after processing, on Stop, and when pausing. This guards against automatic tab discarding; it **cannot eliminate browser background timer throttling or browser-level resource freezes**. Chrome also offers [Memory Saver exceptions](https://support.google.com/chrome/answer/12929150) for sites users choose to keep active. PM never changes global Chrome performance settings.
+
+The automated test suite now includes a [real Chromium extension smoke test](.github/workflows/browser-smoke.yml) against an **offline synthetic ChatGPT-shaped page**, covering a real browser editor transaction, Send, an existing-chat continuation, a new fleet chat, and its saved role mapping. This is independent of the mocked queue tests, but it is **not an authenticated test of ChatGPT's production website**.
+
+Automated tests cover these paths. **Stable v1 still requires a signed-in Chrome test proving a real Send in a disposable Project.** See the [acceptance checklist](docs/V1_LAUNCH_CHECKLIST.md).
 
 ## Full Chrome Side Panel (v0.10)
 
@@ -38,7 +54,7 @@ If ChatGPT changes route **before** Send, PM tries restoring the originally queu
 
 **Upgrade:** stop any run created by an earlier PM version; load PM 0.10 unpacked at `chrome://extensions`, and refresh your Project page. Click the PM toolbar icon or the bottom-right on-page launcher.
 
-## PM 0.11.1 — Stronger Send and verification
+## PM 0.12.0 — Stronger Send and verification
 
 - Prefer the **enabled Send button in the active composer**, not an obsolete disabled control or an unrelated page button.
 - Wait for the composer to settle after prompt injection, fail safely if it is replaced, and never overwrite a draft to coerce the editor.
@@ -104,7 +120,7 @@ PM **streams the first discovered chat batch into the dispatch queue immediately
 
 ## Preparing for PM v1
 
-**0.11.1 is a feature candidate, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
+**0.12.0 is a feature candidate, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
 
 - [v1 go/no-go and live-browser test checklist](docs/V1_LAUNCH_CHECKLIST.md)
 - [Authenticated browser QA runbook](docs/QA_RUNBOOK.md)

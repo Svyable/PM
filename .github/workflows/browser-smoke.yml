@@ -1,0 +1,27 @@
+name: Browser smoke - real Chromium, mock ChatGPT page
+on:
+  push:
+    branches: [main, 'release/**', 'fix/**']
+    paths:
+      - 'extension/**'
+      - 'tests/browser-smoke.mjs'
+      - '.github/workflows/browser-smoke.yml'
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  chromium:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Playwright test browser
+        run: |
+          npm install --no-save --no-package-lock playwright@1.57.0
+          npx playwright install --with-deps chromium
+      - name: Run PM unpacked MV3 extension against a local synthetic ChatGPT DOM
+        run: xvfb-run -a node tests/browser-smoke.mjs

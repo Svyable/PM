@@ -1,9 +1,9 @@
-/* PM — Proceed Methodically 0.11 | Chrome MV3 coordinator
+/* PM — Proceed Methodically 0.12 | Chrome MV3 coordinator
  * Single bounded queue; never retries an uncertain send.
  */
 'use strict';
 importScripts('fleets.js');
-const VERSION='0.11.1', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
+const VERSION='0.12.0', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
 const PROJECT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/project\/?(?:[?#].*)?$/;
 const CHAT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/c\/([a-zA-Z0-9-]+)\/?$/;
 const DEFAULTS={mode:'existing',newCount:1,target:6,prompt:'proceed methodically',mission:'',fleetTemplate:'brainswarm',effort:'High',delaySeconds:2,loadTimeoutSeconds:180,keepTabs:true};
@@ -95,6 +95,10 @@ async function save(job){
     await chrome.action.setBadgeText({text:job.status==='running'?String(job.completed+job.failed):job.status==='done'?'✓':job.status==='error'?'!':''});
     await chrome.action.setBadgeBackgroundColor({color:'#7889ff'});
   }catch{}
+}
+async function allowTabDiscard(tabId,allow){
+  if(!Number.isInteger(tabId))return;
+  try{await chrome.tabs.update(tabId,{autoDiscardable:allow});}catch{}
 }
 async function watchdog(){try{await chrome.alarms.create(ALARM,{periodInMinutes:.5});}catch{}}
 async function clearWatchdog(){try{await chrome.alarms.clear(ALARM);}catch{}}
@@ -209,7 +213,7 @@ async function findProject(preferredTabId=null){
   const job=await load();
   const running=job&&['running','scanning','paused'].includes(job.status)
     ?projects.find(t=>t.id===job.projectTabId):null;
-  const tab=activeProject||related||preferred||running||projects[0];
+  const tab=running||activeProject||related||preferred||projects[0];
   return{ok:true,tabId:tab?.id??null,projectId:projectFromUrl(tab?.url),
     status:tab?'ready':'no-project',
     message:tab?'Project ready':'Open a ChatGPT Project overview to start'};
@@ -302,6 +306,10 @@ async function launch(){
     let tab;
     try{tab=await chrome.tabs.create({url:item.url,active:false});}
     catch(e){setTimeout(()=>void finish(null,{ok:false,error:'Failed opening tab: '+error(e),reasonCode:'tab'},item),0);return;}
+    // Keep only the CURRENT PM-owned dispatch tab from being automatically
+    // discarded by Chrome Memory Saver. This does not bypass background
+    // timer throttling or change the user's browser-wide performance settings.
+    await allowTabDiscard(tab.id,false);
     job.current={tabId:tab.id,chatId:item.id,title:item.title,phase:'waiting',startedAt:Date.now(),attemptToken:job.id+':'+job.index+':'+tab.id};
     job.nextAt=0;await save(job);
     // Start readiness polling immediately, even while the browser reports
@@ -321,6 +329,7 @@ async function pauseReadiness(tabId,token,cid,details){
     j.pauseReason='Chat did not become ready in '+j.config.loadTimeoutSeconds+' seconds: '+details+'. This conversation is still queued and has NOT been sent. Resume to retry this same tab.';
     j.current.waitError=details;
     await save(j);
+    await allowTabDiscard(tabId,true);
   });
 }
 async function dispatch(tabId){
@@ -369,6 +378,10 @@ async function dispatch(tabId){
               ?{type:'PM_NEW_READY',pid}
               :{type:'PM_READY',pid,cid});
             if(r?.ready===true)break;
+            if(r?.blocked){
+              await pauseReadiness(tabId,token,cid,'ChatGPT reports a usage or rate limit: '+error(r.blocked));
+              return;
+            }
             lastReason=r?.busy?'ChatGPT is still generating; PM will wait before sending the next instruction':
               newChat?'the Project new-chat composer is not ready':'the conversation composer is not available yet';
           }
@@ -419,6 +432,40 @@ async function dispatch(tabId){
     }
   }finally{dispatchingTabs.delete(tabId);}
 }
+// A full-page navigation can destroy the original content script immediately
+// after Send. Observe the destination page read-only using a baseline saved
+// BEFORE the click, rather than replaying any submission.
+const verifyingTabs=new Set();
+async function verifyActiveSend(tabId){
+  if(verifyingTabs.has(tabId))return false;
+  verifyingTabs.add(tabId);
+  try{
+    const j=await load(),current=j?.current;
+    if(!j||!['running','paused'].includes(j.status)||current?.phase!=='sending'||
+       current.tabId!==tabId||!current.proofBaseline)return false;
+    const item=j.queue[j.index],tab=await chrome.tabs.get(tabId).catch(()=>null);
+    const route=chatFromUrl(tab?.url);
+    if(!route||route.projectId!==j.projectId||
+       (item.kind!=='new'&&route.chatId!==item.id))return false;
+    const a=await adapter(tabId);
+    if(a.chat?.projectId!==j.projectId||a.chat?.chatId!==route.chatId)return false;
+    const witness=await chrome.tabs.sendMessage(tabId,{
+      type:'PM_VERIFY_ATTEMPT',pid:j.projectId,cid:item.id,
+      kind:item.kind==='new'?'new':'existing',
+      prompt:item.prompt||j.config.prompt,...current.proofBaseline
+    });
+    if(!witness?.verified||witness.chatId!==route.chatId)return false;
+    const latest=await load();
+    if(latest?.id!==j.id||!currentOwned(latest,tabId,current.attemptToken,item.id)||
+       latest.current?.phase!=='sending')return false;
+    await finish(tabId,{ok:true,reasonCode:'sent',submitMethod:'observed',
+      createdChatId:item.kind==='new'?route.chatId:undefined,
+      createdUrl:item.kind==='new'?tab.url:undefined,
+      verificationSource:'destination'});
+    return true;
+  }catch{return false;}
+  finally{verifyingTabs.delete(tabId);}
+}
 async function finish(tabId,result,explicit=null){
   // Serialize competing callbacks rather than silently losing the second result.
   let release;
@@ -437,7 +484,22 @@ async function finish(tabId,result,explicit=null){
       j.status='paused';j.pauseReason='Queue identity changed while processing a tab. No further chats will launch.';
       await save(j);return;
     }
+    if(result.reasonCode==='rate-limit'&&!result.uncertain){
+      j.status='paused';j.current.phase='waiting';
+      j.current.waitError=error(result.error);
+      j.pauseReason='ChatGPT is enforcing a usage or rate limit. PM has stopped dispatching and will not bypass it.'+
+        (result.injected?' An unsent draft may remain; inspect and clear it before Resume.':'');
+      await save(j);await allowTabDiscard(tabId,true);return;
+    }
     if(result.reasonCode==='wrong-chat'&&!result.uncertain){
+      // Navigation after prompt insertion may leave an unsent draft behind.
+      // Never auto-restore and inject again until the operator has inspected.
+      if(result.injected){
+        j.status='paused';j.current.phase='waiting';
+        j.current.waitError=error(result.error);
+        j.pauseReason='ChatGPT changed conversations after PM inserted a draft. No Send was clicked. Inspect the affected tab and clear the unsent draft before Resume.';
+        await save(j);await allowTabDiscard(tabId,true);return;
+      }
       // The adapter guarantees Send was NOT clicked. A transient SPA route
       // change can therefore be corrected safely without advancing the queue.
       // Keep the same tab/chat and rotate the token to reject stale responses.
@@ -465,7 +527,7 @@ async function finish(tabId,result,explicit=null){
       j.status='paused';j.current.phase='waiting';
       j.current.waitError=error(result.error);
       j.pauseReason='ChatGPT changed conversations before Send. Nothing was submitted. PM attempted route recovery; inspect this tab and Resume or Stop.';
-      await save(j);return;
+      await save(j);await allowTabDiscard(tabId,true);return;
     }
     const row={id:result.ok&&result.createdChatId?result.createdChatId:item.id,
       queueId:item.id,kind:item.kind==='new'?'new':'existing',title:item.title,
@@ -475,13 +537,22 @@ async function finish(tabId,result,explicit=null){
       readyWaitMs:j.current?.dispatchedAt?Math.max(0,j.current.dispatchedAt-j.current.startedAt):null,
       confirmationWaitMs:j.current?.dispatchedAt?Math.max(0,Date.now()-j.current.dispatchedAt):null,
       routeRepairs:j.current?.routeRepairs||0,
-      submitMethod:['button','form','enter'].includes(result.submitMethod)?result.submitMethod:null};
+      lastStage:j.current?.stage||'waiting',
+      verificationSource:result.verificationSource==='destination'?'destination':'original',
+      submitMethod:['button','form','enter','observed'].includes(result.submitMethod)?result.submitMethod:null};
     j.results.push(row);
     if(row.ok&&row.kind==='new'){
       void updateCatalog(j.projectId,[{id:row.id,url:row.url,title:row.title}],false);
     }
+    let ledgerError=null;
     if(row.ok&&j.config.mode.startsWith('fleet-')){
-      await recordFleetSuccess(j,item,row);
+      try{
+        await recordFleetSuccess(j,item,row);
+        row.ledgerSaved=true;
+      }catch(e){
+        ledgerError=error(e);row.ledgerSaved=false;
+        row.warning='Prompt verified, but its fleet role mapping could not be saved locally: '+ledgerError;
+      }
     }
     if(j.results.length>1000)j.results.shift();
     if(row.ok){j.completed++;j.consecutiveFailures=0;}
@@ -493,7 +564,10 @@ async function finish(tabId,result,explicit=null){
     const opened=j.current?.tabId;j.current=null;
     // A potentially sent message always requires explicit attention,
     // including when it was the LAST item in the queue.
-    if(row.uncertain&&j.status!=='stopped'){
+    if(ledgerError&&j.status!=='stopped'){
+      j.status='paused';
+      j.pauseReason='The prompt was submitted, but PM could not save its fleet role mapping. Inspect the conversation and browser storage before Resume; PM will not resend it.';
+    }else if(row.uncertain&&j.status!=='stopped'){
       j.status='paused';
       j.pauseReason='Unconfirmed send for '+row.title+'. Inspect that conversation before acknowledging this run; PM will not retry it automatically.';
     }else if(j.index>=j.queue.length&&j.scanComplete&&j.status!=='stopped'){
@@ -504,6 +578,7 @@ async function finish(tabId,result,explicit=null){
     }
     await save(j);
     if(opened&&!j.config.keepTabs){try{await chrome.tabs.remove(opened);}catch{}}
+    else if(opened)await allowTabDiscard(opened,true);
     if(j.status==='done'||j.status==='stopped')await clearWatchdog();
     if(runnable(j))setTimeout(()=>void launch(),Math.max(0,j.nextAt-Date.now()));
     });
@@ -513,7 +588,9 @@ async function control(type){
   const j=await load();if(!j)throw Error('No run found.');
   if(type==='PM_PAUSE'){
     if(j.status!=='running')throw Error('The run is not running.');
-    j.status='paused';j.pauseReason='Paused by you. The current chat may finish.';await save(j);return{ok:true};
+    j.status='paused';j.pauseReason='Paused by you. The current chat may finish.';await save(j);
+    if(j.current?.phase==='waiting')await allowTabDiscard(j.current.tabId,true);
+    return{ok:true};
   }
   if(type==='PM_RESUME'){
     if(j.status!=='paused')throw Error('The run is not paused.');
@@ -522,6 +599,7 @@ async function control(type){
     j.pauseReason=null;j.consecutiveFailures=0;
     if(j.current?.phase==='waiting')j.current.startedAt=Date.now();
     await save(j);await watchdog();
+    if(j.current?.phase==='waiting')await allowTabDiscard(j.current.tabId,false);
     if(j.current?.phase==='waiting'){
       const tabId=j.current.tabId;
       void dispatch(tabId);
@@ -532,6 +610,7 @@ async function control(type){
   if(type==='PM_STOP'){
     if(!['running','scanning','paused'].includes(j.status))return{ok:true};
     const scanning=j.status==='scanning';j.status='stopped';j.pauseReason=null;await save(j);
+    if(j.current?.tabId)await allowTabDiscard(j.current.tabId,true);
     try{
       if(scanning)await chrome.tabs.sendMessage(j.projectTabId,{type:'PM_SCAN_ABORT'});
       else if(j.current?.tabId && j.current.phase==='sending')await chrome.tabs.sendMessage(j.current.tabId,{type:'PM_APPLY_ABORT'});
@@ -559,6 +638,17 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
     return{ok:true,tabId:s.tab.id,projectId:pid};
   })());
   if(m.type==='PM_GET_OVERVIEW')return reply(popup?overview(m.tabId):Promise.reject(Error('Extension panel only.')));
+  if(m.type==='PM_GET_HEALTH')return reply(popup?(async()=>{
+    const tab=await chrome.tabs.get(m.tabId),pid=projectFromUrl(tab.url);
+    if(!pid)throw Error('Open a ChatGPT Project overview.');
+    const a=await adapter(tab.id);
+    if(a.projectId!==pid)throw Error('ChatGPT is still navigating to this Project.');
+    const state=await chrome.tabs.sendMessage(tab.id,{type:'PM_HEALTH'});
+    if(!state?.ok||state.projectId!==pid)throw Error('Project composer not ready.');
+    return{ok:true,projectId:pid,composerReady:!!state.composerReady,
+      effort:state.effort||null,generating:!!state.generating,
+      draftPresent:!!state.draftPresent,blocked:state.blocked||null};
+  })():Promise.reject(Error('Extension panel only.')));
   if(m.type==='PM_INVENTORY_REFRESH')return reply((async()=>{
     if(!popup)throw Error('Extension panel only.');
     const tab=await chrome.tabs.get(m.tabId),pid=projectFromUrl(tab.url);
@@ -639,17 +729,22 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
       {scanning:m.type!=='PM_INVENTORY_DONE',step:Number(m.step)||0});
     return{ok:true};
   })());
-  if(m.type==='PM_STAGE')return reply((async()=>{
+  if(m.type==='PM_STAGE')return reply(withJobLock(async()=>{
     const j=await load();
     if(j?.id!==m.jobId||j.current?.tabId!==s.tab?.id||
-       j.current.chatId!==m.chatId||j.current.attemptToken!==m.attemptToken)return{ok:false};
-    const accepted=['preparing','injected','submitting','verifying'];
-    if(!accepted.includes(m.phase))return{ok:false};
+       j.current.chatId!==m.chatId||j.current.attemptToken!==m.attemptToken||
+       j.current.phase!=='sending'||!['running','paused'].includes(j.status))return{ok:false};
+    const stages=['preparing','injected','submitting','verifying'];
+    const index=stages.indexOf(m.phase);
+    if(index<0||index<stages.indexOf(j.current.stage))return{ok:false};
     j.current.stage=m.phase;j.current.stageDetail=error(m.detail||'');
     j.current.stageAt=Date.now();
+    if(m.phase==='submitting'&&Number.isInteger(m.beforeCount)&&Number.isInteger(m.beforeMatching)){
+      j.current.proofBaseline={beforeCount:m.beforeCount,beforeMatching:m.beforeMatching};
+    }
     await save(j);
     return{ok:true};
-  })());
+  }));
   if(m.type==='PM_RESULT')return reply((async()=>{
     const j=await load();
     if(j?.id!==m.jobId||j.current?.tabId!==s.tab?.id||j.current.chatId!==m.chatId||j.current.attemptToken!==m.attemptToken||j.current.phase!=='sending')return{ok:false};
@@ -663,11 +758,20 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
       }
     }
     await finish(s.tab.id,{ok:verified,uncertain,reasonCode,error:errorText,
-      submitMethod:m.submitMethod,createdChatId:m.createdChatId,createdUrl:m.createdUrl});
+      injected:m.injected===true,submitMethod:m.submitMethod,
+      createdChatId:m.createdChatId,createdUrl:m.createdUrl});
     return{ok:true};
   })());
 });
-chrome.tabs.onUpdated.addListener((id,change)=>{if(change.status==='complete'||typeof change.url==='string')void dispatch(id);});
+chrome.tabs.onUpdated.addListener((id,change)=>{
+  if(change.status==='complete'||typeof change.url==='string'){
+    void dispatch(id);
+    // A newly routed chat may have committed Send just before the originating
+    // content script was destroyed. Never click again: inspect the destination.
+    setTimeout(()=>void verifyActiveSend(id),1000);
+    setTimeout(()=>void verifyActiveSend(id),3500);
+  }
+});
 chrome.tabs.onActivated.addListener(info=>{void recordVisit(info.tabId);});
 chrome.tabs.onRemoved.addListener(id=>{void(async()=>{
   const j=await load();
@@ -686,8 +790,14 @@ chrome.alarms.onAlarm.addListener(a=>{if(a.name!==ALARM)return;void(async()=>{
       if(Date.now()-j.current.startedAt>(j.config.loadTimeoutSeconds||180)*1000)
         await pauseReadiness(j.current.tabId,j.current.attemptToken,j.current.chatId,'readiness deadline exceeded');
       else void dispatch(j.current.tabId);
-    }else if(j.current.phase==='sending'&&Date.now()-j.current.dispatchedAt>90000){
-      await finish(j.current.tabId,{ok:false,uncertain:true,reasonCode:'unconfirmed',error:'Timed out waiting for an acknowledged chat send. Inspect before retrying.'});
+    }else if(j.current.phase==='sending'){
+      if(j.current.proofBaseline)await verifyActiveSend(j.current.tabId);
+      const latest=await load();
+      if(latest?.id===j.id&&latest.current?.tabId===j.current.tabId&&
+         latest.current?.phase==='sending'&&Date.now()-latest.current.dispatchedAt>90000){
+        await finish(j.current.tabId,{ok:false,uncertain:true,reasonCode:'unconfirmed',
+          error:'Timed out waiting for a verified user message. Inspect before any retry.'});
+      }
     }
   }else if(j.status==='running')await launch();
 })();});
@@ -697,6 +807,7 @@ async function quarantineOldJob(){
     j.status='paused';
     j.pauseReason='A PM update occurred during this run. Stop this older run and start a new one to avoid dispatching with stale queue state.';
     await save(j);
+    if(j.current?.tabId)await allowTabDiscard(j.current.tabId,true);
   }
 }
 function enableSidePanel(){

@@ -30,6 +30,7 @@ jobs:
           node --check tests/adapter.mock.cjs
           node --check tests/coordinator.mock.cjs
           node --check tests/panel.mock.cjs
+          node --check tests/browser-smoke.mjs
       - name: Validate manifest and paths
         run: |
           node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('extension/manifest.json'));for(const p of ['background.js','content.js','popup.html','popup.css','popup.js','project-panel.js','panel.html','panel.css','panel.js','fleets.js',...Object.values(m.icons)]){if(!fs.existsSync('extension/'+p))throw Error('Missing: '+p)};if(m.host_permissions.join()!=='https://chatgpt.com/*')throw Error('Unexpected host permissions');if(!m.permissions.includes('sidePanel')||m.action.default_popup||m.side_panel?.default_path!=='panel.html')throw Error('Native side panel setup invalid');if(m.web_accessible_resources?.length)throw Error('Panel must not be exposed as a page iframe')"
@@ -47,12 +48,12 @@ jobs:
           test -f docs/V1_LAUNCH_CHECKLIST.md
           test -f docs/STORE_LISTING_DRAFT.md
           grep -q 'privacy.html' docs/index.html
-          grep -q 'PM-Chrome-Extension-v0.11.1.zip' docs/index.html
+          grep -q 'PM-Chrome-Extension-v0.12.0.zip' docs/index.html
       - name: Verify reproducible installer and every extension file
         run: |
           node scripts/package.mjs --verify
-          unzip -t docs/downloads/PM-Chrome-Extension-v0.11.1.zip
+          unzip -t docs/downloads/PM-Chrome-Extension-v0.12.0.zip
           mkdir -p "$RUNNER_TEMP/pm-check"
-          unzip -q docs/downloads/PM-Chrome-Extension-v0.11.1.zip -d "$RUNNER_TEMP/pm-check"
+          unzip -q docs/downloads/PM-Chrome-Extension-v0.12.0.zip -d "$RUNNER_TEMP/pm-check"
           diff -qr extension "$RUNNER_TEMP/pm-check/extension"
-          sha256sum docs/downloads/PM-Chrome-Extension-v0.11.1.zip
+          sha256sum docs/downloads/PM-Chrome-Extension-v0.12.0.zip

@@ -7,7 +7,7 @@ const path=require('node:path');
 const code=fs.readFileSync(path.join(__dirname,'..','extension','content.js'),'utf8');
 const project='g-p-demo123';
 function environment(mode){
-  let handler,clicks=0,messages=[],menuOpen=false,effortClicks=0,wrongClicks=0,enterKeys=0,formSubmits=0;
+  let handler,clicks=0,messages=[],menuOpen=false,effortClicks=0,wrongClicks=0,enterKeys=0,formSubmits=0,limitVisible=mode==='rateLimit';
   const location={pathname:(mode==='project'||mode.startsWith('new'))?'/g/'+project+'/project':'/g/'+project+'/c/chat-1',href:'https://chatgpt.com/',origin:'https://chatgpt.com'};
   const box={
     isConnected:true,getClientRects:()=>[{}],innerText:(mode==='draft'||mode==='newdraft')?'existing unsent draft':'',
@@ -52,6 +52,8 @@ function environment(mode){
     getAttribute(){return null;},click(){wrongClicks++;}};
   const stopGenerating={isConnected:true,getClientRects:()=>[{}],textContent:'Stop generating',
     getAttribute(k){return k==='aria-label'?'Stop generating':null;}};
+  const usageAlert={isConnected:true,getClientRects:()=>[{}],innerText:"You've reached your usage limit. Try again later.",
+    textContent:"You've reached your usage limit. Try again later.",closest(){return null;}};
   const highOption={
     isConnected:true,getClientRects:()=>[{}],innerText:'High\nMore reasoning time',textContent:'High\nMore reasoning time',
     getAttribute(){return null;},querySelector(){return null;},
@@ -90,6 +92,7 @@ function environment(mode){
   const doc={
     scrollingElement:scrolling,documentElement:scrolling,
     querySelectorAll(selector){
+      if(selector.startsWith('[role="alert"]'))return limitVisible?[usageAlert]:[];
       if(mode==='project'&&selector.includes('a[href*="/c/"]'))return anchors;
       if(selector.startsWith('.ProseMirror'))return[box];
       if(selector==='button')return mode==='generating'?[effort,send,stopGenerating]:mode==='sendMissing'?[effort]:[effort,send];
@@ -117,6 +120,8 @@ function environment(mode){
         messages.push(msg);
         if(mode==='lateStageRoute'&&msg.type==='PM_STAGE'&&msg.phase==='submitting')
           location.pathname='/g/'+project+'/c/other-chat';
+        if(mode==='lateRateLimit'&&msg.type==='PM_STAGE'&&msg.phase==='submitting')
+          limitVisible=true;
         return{ok:true};
       }
     }
@@ -133,7 +138,7 @@ async function until(check,label,ms=2500){
 }
 (async()=>{
   const scan=environment('project');
-  assert.equal(scan.receive({type:'PM_PING'}).version,'0.11.1');
+  assert.equal(scan.receive({type:'PM_PING'}).version,'0.12.0');
   assert.equal(scan.receive({type:'PM_SCAN',jobId:'scan1',pid:project,target:2}).accepted,true);
   await until(()=>scan.messages.some(m=>m.type==='PM_SCANNED'),'scan result');
   const found=scan.messages.find(m=>m.type==='PM_SCANNED');
@@ -157,6 +162,33 @@ async function until(check,label,ms=2500){
   assert.equal(readiness.ready,false,'never submit into a still-generating conversation');
   assert.equal(readiness.busy,true);
   assert.equal(generating.receive({type:'PM_STATUS'}).generating,true);
+
+  const projectHealth=scan.receive({type:'PM_HEALTH'});
+  assert.equal(projectHealth.ok,true);
+  assert.equal(projectHealth.projectId,project);
+  assert.equal(projectHealth.composerReady,true);
+  assert.equal(projectHealth.effort,'High');
+
+  const limited=environment('rateLimit');
+  const limitedHealth=limited.receive({type:'PM_HEALTH'});
+  assert.match(limitedHealth.blocked,/usage limit/i);
+  const limitedReady=limited.receive({type:'PM_READY',pid:project,cid:'chat-1'});
+  assert.equal(limitedReady.ready,false);
+  assert.match(limitedReady.blocked,/usage limit/i);
+  limited.receive({type:'PM_APPLY',jobId:'limit-test',pid:project,cid:'chat-1',
+    attemptToken:'limited',prompt:'proceed methodically',effort:'High'});
+  await until(()=>limited.messages.some(m=>m.type==='PM_RESULT'),'usage limit result');
+  assert.equal(limited.messages.find(m=>m.type==='PM_RESULT').reasonCode,'rate-limit');
+  assert.equal(limited.clicks,0);
+
+  const lateLimit=environment('lateRateLimit');
+  lateLimit.receive({type:'PM_APPLY',jobId:'late-limit',pid:project,cid:'chat-1',
+    attemptToken:'late-limit',prompt:'proceed methodically',effort:'High'});
+  await until(()=>lateLimit.messages.some(m=>m.type==='PM_RESULT'),'late usage limit result');
+  const lateLimited=lateLimit.messages.find(m=>m.type==='PM_RESULT');
+  assert.equal(lateLimited.reasonCode,'rate-limit');
+  assert.equal(lateLimited.injected,true);
+  assert.equal(lateLimit.clicks,0,'limit surfaced before last click; no send');
 
   const draft=environment('draft');
   assert.equal(draft.receive({type:'PM_APPLY',jobId:'job2',pid:project,cid:'chat-1',attemptToken:'draft-token',prompt:'proceed methodically',effort:'High'}).accepted,true);
@@ -194,6 +226,7 @@ async function until(check,label,ms=2500){
   const stageResult=lateStage.messages.find(m=>m.type==='PM_RESULT');
   assert.equal(stageResult.reasonCode,'wrong-chat');
   assert.equal(stageResult.uncertain,false,'route changed before the submission gesture');
+  assert.equal(stageResult.injected,true,'worker must know that a PM draft may remain');
   assert.equal(lateStage.clicks,0,'never click Send after asynchronous navigation');
 
   const late=environment('pickerRoute');
@@ -203,6 +236,7 @@ async function until(check,label,ms=2500){
   const lateResult=late.messages.find(m=>m.type==='PM_RESULT');
   assert.equal(lateResult.ok,false);
   assert.equal(lateResult.uncertain,false);
+  assert.notEqual(lateResult.injected,true,'no PM draft was inserted before effort selection finished');
   assert.equal(lateResult.reasonCode,'wrong-chat');
   assert.equal(late.clicks,0,'never Send after an effort-picker route change');
 
@@ -275,6 +309,13 @@ async function until(check,label,ms=2500){
   assert.equal(send.messages.find(m=>m.type==='PM_RESULT').ok,true);
   assert.equal(send.messages.find(m=>m.type==='PM_RESULT').attemptToken,'attempt-3');
   assert.equal(send.clicks,1);
+  const receipt=send.receive({type:'PM_VERIFY_ATTEMPT',pid:project,cid:'chat-1',kind:'existing',
+    prompt:'proceed methodically',beforeCount:0,beforeMatching:0});
+  assert.equal(receipt.verified,true,'worker can observe the submitted user turn read-only');
+  assert.equal(send.receive({type:'PM_VERIFY_ATTEMPT',pid:project,cid:'chat-1',kind:'existing',
+    prompt:'proceed methodically',beforeCount:1,beforeMatching:1}).verified,false,
+    'baseline prevents old matching messages being counted as new');
+  assert.equal(send.messages.find(m=>m.type==='PM_STAGE'&&m.phase==='submitting').beforeCount,0);
 
   const newChat=environment('newchat');
   assert.equal(newChat.receive({type:'PM_NEW_READY',pid:project}).ready,true);
@@ -287,6 +328,11 @@ async function until(check,label,ms=2500){
   assert.equal(created.createdChatId,'generated-1');
   assert.equal(created.createdUrl,'https://chatgpt.com/g/'+project+'/c/generated-1');
   assert.equal(created.attemptToken,'new-tok-1');
+  const newProof=newChat.receive({type:'PM_VERIFY_ATTEMPT',pid:project,cid:'new:0',kind:'new',
+    prompt:'proceed methodically',beforeCount:0,beforeMatching:0});
+  assert.equal(newProof.verified,true);
+  assert.equal(newProof.chatId,'generated-1');
+  assert.equal(newProof.createdUrl,'https://chatgpt.com/g/'+project+'/c/generated-1');
   assert.equal(newChat.clicks,1,'new chat should submit exactly once');
 
   const draftNew=environment('newdraft');

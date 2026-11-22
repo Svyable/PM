@@ -1,9 +1,9 @@
-/* PM — Proceed Methodically 0.11 | ChatGPT UI adapter
+/* PM — Proceed Methodically 0.12 | ChatGPT UI adapter
  * Operates only on visible browser UI. No private endpoints or remote telemetry.
  */
 (() => {
   'use strict';
-  const VERSION='0.11.1';
+  const VERSION='0.12.0';
   const old=globalThis.__PM_LISTENER__;
   try {
     if(old&&chrome.runtime.onMessage.hasListener?.(old)){
@@ -258,6 +258,37 @@
     ].filter(Boolean);
     return candidates.some(el=>norm(el.innerText||el.textContent)===text);
   }
+  function blockingNotice(){
+    // Respect visible ChatGPT UI limits and do not launch more work into a
+    // known rate-limited session. Never inspect user conversation text for this.
+    const nodes=[...document.querySelectorAll(
+      '[role="alert"],[data-sonner-toast],[data-testid*="rate-limit"],[data-testid*="usage-limit"]'
+    )].filter(el=>shown(el)&&!el.closest?.('[data-message-author-role],[data-testid="user-message"]'));
+    const node=nodes.find(el=>/rate limit|usage limit|message limit|too many requests|you.ve reached|try again later/i.test(norm(el.innerText||el.textContent)));
+    return node?norm(node.innerText||node.textContent).slice(0,220):null;
+  }
+  function readOnlyHealth(){
+    const box=composer(),effort=box?selectedEffort(effortButton(box)):null;
+    return{ok:true,projectId:projectId(),chat:chatId(),
+      composerReady:!!box,generating:isBusy(),
+      draftPresent:!!box&&draftPresent(box),effort:effort||null,
+      blocked:blockingNotice()};
+  }
+  function submissionWitness({pid,cid,kind,prompt,beforeCount,beforeMatching}){
+    if(!Number.isInteger(beforeCount)||!Number.isInteger(beforeMatching)||
+       beforeCount<0||beforeMatching<0||typeof prompt!=='string'||prompt.length>16000)
+      return{ok:false,verified:false,reason:'Invalid send verification baseline.'};
+    const page=chatId(),correct=kind==='new'
+      ?page?.projectId===pid&&page?.chatId!==cid
+      :page?.projectId===pid&&page?.chatId===cid;
+    if(!correct)return{ok:true,verified:false,reason:'Conversation route not ready.'};
+    const messages=userMessages();
+    const matching=messages.filter(el=>userMessageMatches(el,prompt)).length;
+    const verified=messages.length>beforeCount&&matching>beforeMatching;
+    return{ok:true,verified,chatId:page.chatId,projectId:page.projectId,
+      createdUrl:verified&&kind==='new'?location.origin+'/g/'+pid+'/c/'+page.chatId:null,
+      observedUserTurns:messages.length,observedMatches:matching};
+  }
   function fail(reasonCode,error,uncertain=false){return{ok:false,reasonCode,error,uncertain};}
   async function apply({jobId,pid,cid,prompt,effort,attemptToken,kind='existing'}){
     stopApply=false;
@@ -273,14 +304,16 @@
       return;
     }
     if(activeApply!==null){await report('PM_RESULT',{jobId,chatId:cid,attemptToken,...fail('busy','PM is already handling this tab.')});return;}
-    activeApply=jobId;let clicked=false,submitMethod=null;
-    const stage=(phase,detail='')=>report('PM_STAGE',{jobId,chatId:cid,attemptToken,phase,detail});
+    activeApply=jobId;let clicked=false,submitMethod=null,injected=false;
+    const stage=(phase,detail='',meta={})=>report('PM_STAGE',{jobId,chatId:cid,attemptToken,phase,detail,...meta});
     try{
       let box=null;
       for(let i=0;i<90;i++){if(stopApply)throw Error('Aborted');box=composer();if(box)break;await sleep(300);}
       if(!box)throw Object.assign(Error('Chat composer not found.'),{reasonCode:'composer'});
       if(draftPresent(box))throw Object.assign(Error('Existing draft preserved. Chat skipped.'),{reasonCode:'draft'});
       if(isBusy())throw Object.assign(Error('This chat is already generating.'),{reasonCode:'busy'});
+      const limit=blockingNotice();
+      if(limit)throw Object.assign(Error('ChatGPT is limiting submissions: '+limit),{reasonCode:'rate-limit'});
       await setEffort(box,effort);
       if(stopApply)throw Error('Aborted before send.');
       // ChatGPT may navigate while its effort picker opens. Re-check before
@@ -293,6 +326,7 @@
       const inserted=document.execCommand('insertText',false,prompt);
       if(!inserted||norm(box.innerText||box.textContent)!==norm(prompt))
         throw Object.assign(Error('The editor did not accept a proper text input transaction. Nothing was sent.'),{reasonCode:'composer'});
+      injected=true;
       await stage('injected','Prompt entered; waiting for an enabled Send control.');
       let send=null,plan=null;
       for(let i=0;i<32;i++){
@@ -336,13 +370,17 @@
       // meaningful fallback than a synthetic Enter when the form is available.
       // Stage messages round-trip through the extension service worker: the
       // page could navigate DURING that await. Revalidate at the last instant.
-      await stage('submitting','Preparing one '+plan.method+' submission.');
+      await stage('submitting','Preparing one '+plan.method+' submission.',{
+        beforeCount,beforeMatching
+      });
       if(stopApply||!routeMatches()||composer()!==box){
         throw Object.assign(Error('Target conversation or composer changed immediately before submission. Nothing was clicked.'),{reasonCode:'wrong-chat'});
       }
       if(norm(box.innerText||box.textContent)!==norm(prompt)){
         throw Object.assign(Error('Prompt changed immediately before submission. Nothing was clicked.'),{reasonCode:'composer-changed'});
       }
+      const lateLimit=blockingNotice();
+      if(lateLimit)throw Object.assign(Error('ChatGPT rate or usage limit: '+lateLimit),{reasonCode:'rate-limit'});
       if(plan.method==='button'&&!sendAvailable(plan.target)){
         throw Object.assign(Error('Send became disabled immediately before click. Nothing was submitted.'),{reasonCode:'send-disabled'});
       }
@@ -380,7 +418,8 @@
       await report('PM_RESULT',{jobId,chatId:cid,attemptToken,ok:true,reasonCode:'sent',submitMethod,
         ...(creating?{createdChatId:created.chatId,createdUrl:location.origin+'/g/'+pid+'/c/'+created.chatId}:{})});
     }catch(e){
-      await report('PM_RESULT',{jobId,chatId:cid,attemptToken,submitMethod,...fail(e.reasonCode||'error',String(e.message||e),clicked)});
+      await report('PM_RESULT',{jobId,chatId:cid,attemptToken,submitMethod,injected,
+        ...fail(e.reasonCode||'error',String(e.message||e),clicked)});
     }finally{activeApply=null;}
   }
   const listener=(message,sender,sendResponse)=>{
@@ -397,15 +436,23 @@
       sendResponse({ok:true,chat,generating:!!chat&&isBusy(),composerReady:!!composer()});
       return;
     }
+    if(message.type==='PM_HEALTH'){
+      sendResponse(readOnlyHealth());return;
+    }
+    if(message.type==='PM_VERIFY_ATTEMPT'){
+      sendResponse(submissionWitness(message));return;
+    }
     if(message.type==='PM_READY'){
       const current=chatId(),busy=isBusy();
+      const blocked=blockingNotice();
       sendResponse({ok:true,ready:current?.projectId===message.pid&&current?.chatId===message.cid&&
-        !!composer()&&!busy,busy,chat:current});
+        !!composer()&&!busy&&!blocked,busy,blocked,chat:current});
       return;
     }
     if(message.type==='PM_NEW_READY'){
       const correct=projectId()===message.pid&&!chatId(),busy=isBusy();
-      sendResponse({ok:true,ready:correct&&!!composer()&&!busy,busy,projectId:projectId()});
+      const blocked=blockingNotice();
+      sendResponse({ok:true,ready:correct&&!!composer()&&!busy&&!blocked,busy,blocked,projectId:projectId()});
       return;
     }
     if(message.type==='PM_SCAN'){
