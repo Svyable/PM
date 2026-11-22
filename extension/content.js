@@ -258,11 +258,21 @@
     ].filter(Boolean);
     return candidates.some(el=>norm(el.innerText||el.textContent)===text);
   }
+  function blockingNotice(){
+    // Respect visible ChatGPT UI limits and do not launch more work into a
+    // known rate-limited session. Never inspect user conversation text for this.
+    const nodes=[...document.querySelectorAll(
+      '[role="alert"],[data-sonner-toast],[data-testid*="rate-limit"],[data-testid*="usage-limit"]'
+    )].filter(el=>shown(el)&&!el.closest?.('[data-message-author-role],[data-testid="user-message"]'));
+    const node=nodes.find(el=>/rate limit|usage limit|message limit|too many requests|you.ve reached|try again later/i.test(norm(el.innerText||el.textContent)));
+    return node?norm(node.innerText||node.textContent).slice(0,220):null;
+  }
   function readOnlyHealth(){
     const box=composer(),effort=box?selectedEffort(effortButton(box)):null;
     return{ok:true,projectId:projectId(),chat:chatId(),
       composerReady:!!box,generating:isBusy(),
-      draftPresent:!!box&&draftPresent(box),effort:effort||null};
+      draftPresent:!!box&&draftPresent(box),effort:effort||null,
+      blocked:blockingNotice()};
   }
   function submissionWitness({pid,cid,kind,prompt,beforeCount,beforeMatching}){
     if(!Number.isInteger(beforeCount)||!Number.isInteger(beforeMatching)||
@@ -302,6 +312,8 @@
       if(!box)throw Object.assign(Error('Chat composer not found.'),{reasonCode:'composer'});
       if(draftPresent(box))throw Object.assign(Error('Existing draft preserved. Chat skipped.'),{reasonCode:'draft'});
       if(isBusy())throw Object.assign(Error('This chat is already generating.'),{reasonCode:'busy'});
+      const limit=blockingNotice();
+      if(limit)throw Object.assign(Error('ChatGPT is limiting submissions: '+limit),{reasonCode:'rate-limit'});
       await setEffort(box,effort);
       if(stopApply)throw Error('Aborted before send.');
       // ChatGPT may navigate while its effort picker opens. Re-check before
@@ -367,6 +379,8 @@
       if(norm(box.innerText||box.textContent)!==norm(prompt)){
         throw Object.assign(Error('Prompt changed immediately before submission. Nothing was clicked.'),{reasonCode:'composer-changed'});
       }
+      const lateLimit=blockingNotice();
+      if(lateLimit)throw Object.assign(Error('ChatGPT rate or usage limit: '+lateLimit),{reasonCode:'rate-limit'});
       if(plan.method==='button'&&!sendAvailable(plan.target)){
         throw Object.assign(Error('Send became disabled immediately before click. Nothing was submitted.'),{reasonCode:'send-disabled'});
       }
@@ -430,13 +444,15 @@
     }
     if(message.type==='PM_READY'){
       const current=chatId(),busy=isBusy();
+      const blocked=blockingNotice();
       sendResponse({ok:true,ready:current?.projectId===message.pid&&current?.chatId===message.cid&&
-        !!composer()&&!busy,busy,chat:current});
+        !!composer()&&!busy&&!blocked,busy,blocked,chat:current});
       return;
     }
     if(message.type==='PM_NEW_READY'){
       const correct=projectId()===message.pid&&!chatId(),busy=isBusy();
-      sendResponse({ok:true,ready:correct&&!!composer()&&!busy,busy,projectId:projectId()});
+      const blocked=blockingNotice();
+      sendResponse({ok:true,ready:correct&&!!composer()&&!busy&&!blocked,busy,blocked,projectId:projectId()});
       return;
     }
     if(message.type==='PM_SCAN'){
