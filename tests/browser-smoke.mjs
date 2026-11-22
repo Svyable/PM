@@ -71,6 +71,10 @@ try{
   const extensionId=new URL(worker.url()).hostname;
   assert.ok(extensionId,'Extension service worker must be registered');
 
+  context.on('page',p=>{
+    p.on('pageerror',e=>console.error('Page script error:',p.url(),String(e)));
+  });
+  worker.on('console',m=>{if(m.type()==='error')console.error('Extension worker error:',m.text());});
   const projectPage=await context.newPage();
   await projectPage.goto(projectUrl,{waitUntil:'domcontentloaded'});
   const extensionPage=await context.newPage();
@@ -97,6 +101,23 @@ try{
           current:state.job.current,results:state.job.results
         }));
       await new Promise(r=>setTimeout(r,220));
+    }
+    const state=await send('PM_GET_JOB');
+    console.error('PM browser smoke timeout:',label,JSON.stringify({
+      status:state.job?.status,current:state.job?.current,found:state.job?.found,
+      total:state.job?.total,scanComplete:state.job?.scanComplete,
+      results:state.job?.results,error:state.job?.error,
+      pauseReason:state.job?.pauseReason
+    }));
+    console.error('Tabs:',JSON.stringify(await extensionPage.evaluate(async()=>{
+      return (await chrome.tabs.query({})).map(t=>({id:t.id,url:t.url,status:t.status,discarded:t.discarded}));
+    })));
+    for(const page of context.pages()){
+      console.error('Page:',page.url(),JSON.stringify(await page.evaluate(()=>{
+        const composer=document.querySelector('.ProseMirror');
+        return{prompt:composer?.innerText,sendDisabled:document.querySelector('[data-testid="send-button"]')?.disabled,
+          messages:[...document.querySelectorAll('[data-message-author-role="user"]')].map(x=>x.innerText)};
+      }).catch(e=>String(e))));
     }
     throw Error('Timed out waiting for '+label);
   }
