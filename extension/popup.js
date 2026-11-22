@@ -4,7 +4,7 @@ const $=id=>document.getElementById(id);
 const setup=$('setup'),run=$('run'),notice=$('notice'),launchButton=$('launch');
 const panelMode=document.body.dataset.pmMode==='panel';
 const hostTabId=panelMode?Number(new URLSearchParams(location.search).get('pmTabId')):null;
-let projectTabId=null,activeProjectId=null,latestJob=null,showingRun=false,working=false,manualNew=false;
+let projectTabId=null,activeProjectId=null,latestJob=null,showingRun=false,working=false,manualNew=false,healthChecking=false;
 let fleetDetails=null,lastMode='existing';
 async function message(type,extras={}){
   try{const r=await chrome.runtime.sendMessage({type,...extras});if(r?.ok===false)throw Error(r.error||'PM request failed.');return r;}
@@ -20,6 +20,8 @@ function statusConnection(ok,desc){
   launchButton.disabled=!ok || (latestJob&&['scanning','running','paused'].includes(latestJob.status));
 }
 async function inspect(){
+  if(healthChecking)return;
+  healthChecking=true;
   try{
     const context=await message('PM_FIND_PROJECT',{
       preferredTabId:projectTabId||(Number.isInteger(hostTabId)?hostTabId:null)
@@ -32,16 +34,22 @@ async function inspect(){
     const switched=projectTabId!==context.tabId||activeProjectId!==context.projectId;
     const oldProjectId=activeProjectId;
     projectTabId=context.tabId;activeProjectId=context.projectId;
-    statusConnection(true,'Project connected automatically');
     if(switched){
       if(oldProjectId&&oldProjectId!==context.projectId)$('mission').value='';
       fleetDetails=null;inform('');void fetchFleet();
     }
+    // A Project URL alone is not a live connection. Inspect its actual
+    // composer without clicking menus, changing settings or sending text.
+    const ready=await message('PM_GET_HEALTH',{tabId:context.tabId});
+    if(activeProjectId!==context.projectId||projectTabId!==context.tabId)return;
+    const ok=ready?.composerReady===true;
+    statusConnection(ok,ok?
+      'Project ready · '+(ready.effort?ready.effort+' selected':'effort not detected')+
+        (ready.generating?' · generating':''):
+      'Project detected · waiting for ChatGPT composer');
   }catch(e){
-    // Project detection is self-healing. Recheck automatically rather than
-    // requiring a user-triggered Reconnect to recover from a transient error.
-    statusConnection(false,'Looking for a Project…');
-  }
+    statusConnection(false,projectTabId?'Project detected · ChatGPT still loading':'Looking for a Project…');
+  }finally{healthChecking=false;}
 }
 function showRunMode(value){
   showingRun=value;setup.hidden=panelMode?false:value;run.hidden=!value;
@@ -51,13 +59,13 @@ async function preferences(){
   try{
     const r=await message('PM_GET_PREFS');
     const p=r.prefs||{};
-    setField('target',p.target||10);setField('prompt',p.prompt||'proceed methodically');
+    setField('target',p.target||6);setField('prompt',p.prompt||'proceed methodically');
     setField('mode',p.mode||'existing');setField('newCount',p.newCount||1);
     setField('fleetTemplate',p.fleetTemplate||'brainswarm');
     // A mission belongs to its Project, not to a global preference. Do not
     // carry a previous Project's mission into the next one automatically.
     setField('mission','');lastMode=p.mode||'existing';
-    setField('effort',p.effort||'High');setField('delay',p.delaySeconds||4);setField('loadTimeout',p.loadTimeoutSeconds||180);
+    setField('effort',p.effort||'High');setField('delay',p.delaySeconds||2);setField('loadTimeout',p.loadTimeoutSeconds||180);
     $('keepTabs').checked=p.keepTabs!==false;markPreset();updateMode();
   }catch(e){inform(String(e.message||e));}
 }
@@ -172,7 +180,8 @@ function resultLabel(job){
   if(job.status==='scanning')return 'Scanning project';
   if(job.status==='running')return 'Dispatching prompts';
   if(job.status==='paused')return 'Paused — attention needed';
-  if(job.status==='done')return 'Dispatch completed';
+  if(job.status==='done')return job.completed===0?'No verified sends':
+    job.failed>0?'Finished with issues':'Dispatch completed';
   if(job.status==='stopped')return 'Run stopped';
   return 'Run error';
 }
@@ -210,6 +219,10 @@ function renderJob(job){
       'Finished. Review verified sends and uncertain attempts.'):
     job.status==='stopped'?'Remaining conversations were not launched.':'Review recent activity.');
   $('runMessage').textContent=msg;
+  $('resume').textContent=job.status==='paused'&&/Unconfirmed send/.test(job.pauseReason||'')
+    ?'Continue remaining (no retry)':'Resume';
+  $('resume').title=job.status==='paused'?
+    'Resume remaining queued conversations; PM will not replay an uncertain Send.':'';
   $('pause').hidden=job.status!=='running';
   $('resume').hidden=job.status!=='paused';
   $('stop').hidden=!['scanning','running','paused'].includes(job.status);
@@ -232,11 +245,13 @@ function renderJob(job){
       line.append(open);
     }
     line.append(status);wrapper.append(line);
-    if(row.error){const reason=document.createElement('div');reason.className='reason';reason.textContent=row.error;wrapper.append(reason);}
+    if(row.error||row.warning){const reason=document.createElement('div');reason.className='reason';reason.textContent=row.warning||row.error;wrapper.append(reason);}
     if(Number.isFinite(row.readyWaitMs)){
       const timing=document.createElement('div');timing.className='reason';
       timing.textContent='Page ready: '+(row.readyWaitMs/1000).toFixed(1)+'s · Verification: '+((row.confirmationWaitMs||0)/1000).toFixed(1)+'s'+
-        (row.submitMethod?' · Attempted via '+({button:'Send button',form:'form submit',enter:'Enter fallback'}[row.submitMethod]||'unknown'):' · No submit gesture')+
+        (row.submitMethod==='observed'?' · Verified on destination page':
+          row.submitMethod?' · Attempted via '+({button:'Send button',form:'form submit',enter:'Enter fallback'}[row.submitMethod]||'unknown'):
+          ' · No reported submit gesture')+
         (row.routeRepairs?' · Recovered route '+row.routeRepairs+'×':'');
       wrapper.append(timing);
     }
