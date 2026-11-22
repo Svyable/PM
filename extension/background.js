@@ -96,6 +96,10 @@ async function save(job){
     await chrome.action.setBadgeBackgroundColor({color:'#7889ff'});
   }catch{}
 }
+async function allowTabDiscard(tabId,allow){
+  if(!Number.isInteger(tabId))return;
+  try{await chrome.tabs.update(tabId,{autoDiscardable:allow});}catch{}
+}
 async function watchdog(){try{await chrome.alarms.create(ALARM,{periodInMinutes:.5});}catch{}}
 async function clearWatchdog(){try{await chrome.alarms.clear(ALARM);}catch{}}
 function validate(raw){
@@ -305,7 +309,7 @@ async function launch(){
     // Keep only the CURRENT PM-owned dispatch tab from being automatically
     // discarded by Chrome Memory Saver. This does not bypass background
     // timer throttling or change the user's browser-wide performance settings.
-    try{await chrome.tabs.update(tab.id,{autoDiscardable:false});}catch{}
+    await allowTabDiscard(tab.id,false);
     job.current={tabId:tab.id,chatId:item.id,title:item.title,phase:'waiting',startedAt:Date.now(),attemptToken:job.id+':'+job.index+':'+tab.id};
     job.nextAt=0;await save(job);
     // Start readiness polling immediately, even while the browser reports
@@ -325,6 +329,7 @@ async function pauseReadiness(tabId,token,cid,details){
     j.pauseReason='Chat did not become ready in '+j.config.loadTimeoutSeconds+' seconds: '+details+'. This conversation is still queued and has NOT been sent. Resume to retry this same tab.';
     j.current.waitError=details;
     await save(j);
+    await allowTabDiscard(tabId,true);
   });
 }
 async function dispatch(tabId){
@@ -484,7 +489,7 @@ async function finish(tabId,result,explicit=null){
       j.current.waitError=error(result.error);
       j.pauseReason='ChatGPT is enforcing a usage or rate limit. PM has stopped dispatching and will not bypass it.'+
         (result.injected?' An unsent draft may remain; inspect and clear it before Resume.':'');
-      await save(j);return;
+      await save(j);await allowTabDiscard(tabId,true);return;
     }
     if(result.reasonCode==='wrong-chat'&&!result.uncertain){
       // Navigation after prompt insertion may leave an unsent draft behind.
@@ -493,7 +498,7 @@ async function finish(tabId,result,explicit=null){
         j.status='paused';j.current.phase='waiting';
         j.current.waitError=error(result.error);
         j.pauseReason='ChatGPT changed conversations after PM inserted a draft. No Send was clicked. Inspect the affected tab and clear the unsent draft before Resume.';
-        await save(j);return;
+        await save(j);await allowTabDiscard(tabId,true);return;
       }
       // The adapter guarantees Send was NOT clicked. A transient SPA route
       // change can therefore be corrected safely without advancing the queue.
@@ -522,7 +527,7 @@ async function finish(tabId,result,explicit=null){
       j.status='paused';j.current.phase='waiting';
       j.current.waitError=error(result.error);
       j.pauseReason='ChatGPT changed conversations before Send. Nothing was submitted. PM attempted route recovery; inspect this tab and Resume or Stop.';
-      await save(j);return;
+      await save(j);await allowTabDiscard(tabId,true);return;
     }
     const row={id:result.ok&&result.createdChatId?result.createdChatId:item.id,
       queueId:item.id,kind:item.kind==='new'?'new':'existing',title:item.title,
@@ -573,7 +578,7 @@ async function finish(tabId,result,explicit=null){
     }
     await save(j);
     if(opened&&!j.config.keepTabs){try{await chrome.tabs.remove(opened);}catch{}}
-    else if(opened){try{await chrome.tabs.update(opened,{autoDiscardable:true});}catch{}}
+    else if(opened)await allowTabDiscard(opened,true);
     if(j.status==='done'||j.status==='stopped')await clearWatchdog();
     if(runnable(j))setTimeout(()=>void launch(),Math.max(0,j.nextAt-Date.now()));
     });
@@ -583,7 +588,9 @@ async function control(type){
   const j=await load();if(!j)throw Error('No run found.');
   if(type==='PM_PAUSE'){
     if(j.status!=='running')throw Error('The run is not running.');
-    j.status='paused';j.pauseReason='Paused by you. The current chat may finish.';await save(j);return{ok:true};
+    j.status='paused';j.pauseReason='Paused by you. The current chat may finish.';await save(j);
+    if(j.current?.phase==='waiting')await allowTabDiscard(j.current.tabId,true);
+    return{ok:true};
   }
   if(type==='PM_RESUME'){
     if(j.status!=='paused')throw Error('The run is not paused.');
@@ -592,6 +599,7 @@ async function control(type){
     j.pauseReason=null;j.consecutiveFailures=0;
     if(j.current?.phase==='waiting')j.current.startedAt=Date.now();
     await save(j);await watchdog();
+    if(j.current?.phase==='waiting')await allowTabDiscard(j.current.tabId,false);
     if(j.current?.phase==='waiting'){
       const tabId=j.current.tabId;
       void dispatch(tabId);
@@ -602,6 +610,7 @@ async function control(type){
   if(type==='PM_STOP'){
     if(!['running','scanning','paused'].includes(j.status))return{ok:true};
     const scanning=j.status==='scanning';j.status='stopped';j.pauseReason=null;await save(j);
+    if(j.current?.tabId)await allowTabDiscard(j.current.tabId,true);
     try{
       if(scanning)await chrome.tabs.sendMessage(j.projectTabId,{type:'PM_SCAN_ABORT'});
       else if(j.current?.tabId && j.current.phase==='sending')await chrome.tabs.sendMessage(j.current.tabId,{type:'PM_APPLY_ABORT'});
@@ -798,6 +807,7 @@ async function quarantineOldJob(){
     j.status='paused';
     j.pauseReason='A PM update occurred during this run. Stop this older run and start a new one to avoid dispatching with stale queue state.';
     await save(j);
+    if(j.current?.tabId)await allowTabDiscard(j.current.tabId,true);
   }
 }
 function enableSidePanel(){
