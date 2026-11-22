@@ -21,7 +21,7 @@ async function waitFor(check,label,timeout=12000){
 function setup(options={}){
   const storage={},tabs=new Map(),injected=new Set(),attempts=[],opened=[];
   tabs.set(1,{id:1,windowId:42,url:projectURL,status:'complete',route:null,ready:true});
-  let listener,onUpdated,onRemoved,onActivated,nextTabId=1,injections=0,sideOpens=0,repairUpdates=0,busyReadyChecks=0;
+  let listener,onUpdated,onRemoved,onActivated,nextTabId=1,injections=0,sideOpens=0,repairUpdates=0,busyReadyChecks=0,limitReadyChecks=0;
   const chrome={
     runtime:{onMessage:{addListener(fn){listener=fn;}},onStartup:{addListener(){}},onInstalled:{addListener(){}}},
     sidePanel:{async setPanelBehavior(opts){assert.equal(opts.openPanelOnActionClick,true);},async open(opts){assert.equal(opts.windowId,42,'side panel must be window-wide, not tab-specific');assert.equal(opts.tabId,undefined);sideOpens++;}},
@@ -76,7 +76,9 @@ function setup(options={}){
         }
         if(msg.type==='PM_READY'){
           const busy=!!(options.busyFirstReadies&&msg.cid==='chat-one'&&++busyReadyChecks<=options.busyFirstReadies);
-          return{ok:true,ready:tab.ready&&tab.route===msg.cid&&!busy,busy,
+          const blocked=!!(options.limitFirstReadies&&msg.cid==='chat-one'&&++limitReadyChecks<=options.limitFirstReadies);
+          return{ok:true,ready:tab.ready&&tab.route===msg.cid&&!busy&&!blocked,busy,
+            blocked:blocked?'You have reached your usage limit':null,
             chat:{projectId:project,chatId:tab.route}};
         }
         if(msg.type==='PM_NEW_READY'){
@@ -129,10 +131,13 @@ function setup(options={}){
           }
           setTimeout(()=>void request('PM_RESULT',{
             jobId:msg.jobId,chatId:msg.cid,attemptToken:msg.attemptToken,
-            ok:!uncertain&&!skipped&&!wrongRoute,uncertain,
-            injected:!!(options.routeChangedAfterInsertion&&wrongRoute),
-            reasonCode:wrongRoute?'wrong-chat':uncertain?'unconfirmed':skipped?'draft':'sent',
-            error:wrongRoute?'ChatGPT changed conversations before Send. Nothing was submitted.':uncertain?'No matching rendered user message':skipped?'Existing draft preserved':null,
+            ok:!uncertain&&!skipped&&!wrongRoute&&
+              !(options.rateLimitAfterApply&&msg.cid==='chat-one'),uncertain,
+            injected:!!(options.routeChangedAfterInsertion&&wrongRoute)||!!(options.rateLimitAfterApply&&msg.cid==='chat-one'),
+            reasonCode:options.rateLimitAfterApply&&msg.cid==='chat-one'?'rate-limit':
+              wrongRoute?'wrong-chat':uncertain?'unconfirmed':skipped?'draft':'sent',
+            error:options.rateLimitAfterApply&&msg.cid==='chat-one'?'ChatGPT usage limit; nothing was submitted.':
+              wrongRoute?'ChatGPT changed conversations before Send. Nothing was submitted.':uncertain?'No matching rendered user message':skipped?'Existing draft preserved':null,
             ...(creating?{createdChatId:created,createdUrl:tab.url}:{})
           },id),options.resultDelayMs||20);
           return{accepted:true};
@@ -215,6 +220,21 @@ function setup(options={}){
     phase:'injected'
   },owned.tabId)).ok,false,'no late stage write after finish');
   assert.equal(stageOrder.storage.pmJob.current,null);
+
+  const limited=setup({limitFirstReadies:1});
+  await limited.request('PM_START',{tabId:1,config:limited.prefs});
+  await waitFor(()=>limited.storage.pmJob?.status==='paused','pause on ChatGPT usage limit',6000);
+  assert.equal(limited.attempts.length,0,'no Send under account limit');
+  assert.match(limited.storage.pmJob.pauseReason,/usage or rate limit/i);
+  assert.equal((await limited.request('PM_RESUME')).ok,true);
+  await waitFor(()=>limited.storage.pmJob?.status==='done','resume after limit clears',10000);
+  assert.equal(limited.storage.pmJob.completed,2);
+
+  const limitedAfterInput=setup({rateLimitAfterApply:true});
+  await limitedAfterInput.request('PM_START',{tabId:1,config:limitedAfterInput.prefs});
+  await waitFor(()=>limitedAfterInput.storage.pmJob?.status==='paused','late limit pauses',6000);
+  assert.equal(limitedAfterInput.storage.pmJob.index,0);
+  assert.match(limitedAfterInput.storage.pmJob.pauseReason,/usage or rate limit/i);
 
   const projectSelection=setup();
   const health=await projectSelection.request('PM_GET_HEALTH',{tabId:1});
