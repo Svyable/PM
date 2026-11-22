@@ -24,6 +24,10 @@ Dispatch status messages are serialized with the queue so late updates cannot re
 
 PM also respects visible ChatGPT usage/rate-limit notices and stops dispatch rather than trying to bypass an account limit. **No backend, no private ChatGPT API, no automated cross-thread message sharing.**
 
+For background reliability, PM temporarily marks only its **current dispatch tab** as non-discardable, then restores the tab's normal Chrome behavior after processing, on Stop, and when pausing. This guards against automatic tab discarding; it **cannot eliminate browser background timer throttling or browser-level resource freezes**. Chrome also offers [Memory Saver exceptions](https://support.google.com/chrome/answer/12929150) for sites users choose to keep active. PM never changes global Chrome performance settings.
+
+The automated test suite now includes a [real Chromium extension smoke test](.github/workflows/browser-smoke.yml) against an **offline synthetic ChatGPT-shaped page**, covering a real browser editor transaction, Send, an existing-chat continuation, a new fleet chat, and its saved role mapping. This is independent of the mocked queue tests, but it is **not an authenticated test of ChatGPT's production website**.
+
 Automated tests cover these paths. **Stable v1 still requires a signed-in Chrome test proving a real Send in a disposable Project.** See the [acceptance checklist](docs/V1_LAUNCH_CHECKLIST.md).
 
 ## Full Chrome Side Panel (v0.10)
