@@ -118,7 +118,7 @@ Link this signed-off runbook to the v1 GO/NO-GO tracking issue. Keep the issue o
 - [ ] Force Send disabled or hide it in developer tools on a disposable chat; check PM fails closed or performs at most one Enter, never two gestures.
 - [ ] Check the export contains verified/uncertain records only, without invented cooperation or cross-chat message access.
 
-## Smoke test J: Send controls and background confirmation (v0.11.1)
+## Smoke test J: Send controls and background confirmation (v0.12.0)
 
 - [ ] Use a disposable Project with one chat. Preselect High manually; instruct PM to continue one chat. Confirm the exact user message is submitted once, not merely visible in the input.
 - [ ] Try one new project thread and confirm the newly created URL is inside the correct Project.
@@ -127,3 +127,14 @@ Link this signed-off runbook to the v1 GO/NO-GO tracking issue. Keep the issue o
 - [ ] With Send absent but a functioning composer form, PM may attempt requestSubmit once; if the only fallback is Enter, PM sends one keyboard gesture only.
 - [ ] With Send visible but disabled, PM must not attempt form or Enter; report send-disabled without claiming success.
 - [ ] Repeat an existing prompt in the same chat. Verify remounting an earlier identical user turn never counts as a successful new submission.
+
+## Smoke test K: release-candidate reliability (v0.12)
+
+- [ ] Open a Project overview in a signed-in Chrome profile. PM must automatically show "Project ready" only after it detects a live composer, including its selected effort when available.
+- [ ] Run one existing chat with a unique harmless prompt, Keep current effort and a one-chat target. Confirm the actual new user turn and exactly one submission gesture.
+- [ ] Run one new fleet chat in another disposable Project. Confirm its new chat ID and first user message belong to that Project.
+- [ ] Verify a full-page navigation after Send can still be observed from the newly loaded chat. PM must never repeat the submission.
+- [ ] If navigation occurs after insertion but before Send, verify PM pauses and reports that an unsent draft may remain; there must be no automatic reinjection.
+- [ ] Simulate fleet storage failure: record success of the user turn but halt with an explicit role-mapping error, not a hanging "sending" state.
+- [ ] Simulate a visible account usage-limit notice and confirm PM blocks further sends until the limit clears. Do not evade account limits.
+- [ ] Check the full side panel across tab switches, Pause/Stop/Resume behavior, and safe outcome labels (no green success for uncertainty).
