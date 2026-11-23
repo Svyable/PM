@@ -3,7 +3,7 @@
  */
 (() => {
   'use strict';
-  const VERSION='0.12.0';
+  const VERSION='0.13.0';
   const old=globalThis.__PM_LISTENER__;
   try {
     if(old&&chrome.runtime.onMessage.hasListener?.(old)){
