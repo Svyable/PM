@@ -1,5 +1,22 @@
 # PM / Proceed Methodically — Changelog
 
+## 0.13.0 — Project OS / Portfolio Command Center (2026-11-22)
+
+**Focus:** persistent project management across ChatGPT conversations, not just bulk dispatch.
+
+- **Project brief:** editable Mission, Definition of success and Next decisive action, stored separately for each Project ID.
+- **Task and milestone board:** actionable deliverables, notes, due dates, priorities, status and optional linked conversation, plus overview counts for open/blocked/overdue work.
+- **Fleet review plan:** generate one pending review task per verified specialist conversation, linked to its chat ID, without duplicating existing linked tasks.
+- **Conversation workstreams:** manually maintained status (Untriaged, Working, Waiting, Blocked, Done), custom labels, notes and bulk status changes.
+- **Selected dispatch:** check specific discovered chats, then dispatch only to those exact conversations using PM's existing verified-send coordinator; reject duplicates, foreign Project URLs and mismatched counts.
+- **Local run history:** keep the latest 40 terminal run summaries per Project.
+- **Data portability:** export or explicitly import a versioned Project Board JSON backup, with same-Project checks and confirmation.
+- **Concurrency safety:** revision checked mutations prevent simultaneous PM windows from overwriting each other's latest board.
+- **Privacy:** no new host permissions, no PM backend; progress tracking is explicitly PM-authored and does not claim ChatGPT native unread or agent completion status.
+- **Tests:** pure schema/mutation regression, coordinator project isolation and selected queue tests, full Chromium Project OS side-panel smoke.
+
+Read the [Project OS guide](docs/PROJECT_OS.md). Live authenticated ChatGPT acceptance remains required for stable v1.
+
 ## 0.12.0 — Prime-time reliability candidate (2026-11-22)
 
 **Focus:** trustworthy dispatch, project health, recovery, browser validation.

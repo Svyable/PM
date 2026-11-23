@@ -101,6 +101,7 @@ for(const file of ['background.js','content.js','project-panel.js','popup.js','p
 }
 const manifestFile=resolve(unpacked,'manifest.json');
 const manifest=JSON.parse(await readFile(manifestFile,'utf8'));
+assert.equal(manifest.version,'0.13.0','browser smoke must test the versioned Project OS installer source');
 manifest.host_permissions=['http://127.0.0.1/*'];
 for(const script of manifest.content_scripts)script.matches=['http://127.0.0.1/*'];
 await writeFile(manifestFile,JSON.stringify(manifest));
@@ -170,6 +171,36 @@ try{
   assert.equal(health.composerReady,true,'real browser recognizes Project composer');
   assert.equal(health.effort,'Medium','live effort picker is observed before dispatch');
 
+  // Exercise Project OS through the real side-panel DOM, not only worker calls.
+  await extensionPage.locator('#pmMission:not([disabled])').waitFor({timeout:15000});
+  await extensionPage.locator('#pmMission').fill('Investigate reproducible project execution.');
+  await extensionPage.locator('#pmObjective').fill('Publish a checked implementation.');
+  await extensionPage.locator('#pmNextAction').fill('Review launch blocker tests.');
+  await extensionPage.locator('#pmBriefForm button[type="submit"]').click();
+  await extensionPage.waitForFunction(()=>
+    document.getElementById('pmBriefStatus')?.textContent==='Saved',{timeout:12000});
+  const brief=await send('PM_BOARD_GET',{tabId:projectTabId});
+  assert.equal(brief.board.mission,'Investigate reproducible project execution.');
+  assert.equal(brief.board.objective,'Publish a checked implementation.');
+  await extensionPage.locator('#pmTaskTitle').fill('Approve Project OS release');
+  await extensionPage.locator('#pmTaskNotes').fill('Verify roles and changed files.');
+  await extensionPage.locator('#pmTaskPriority').selectOption('high');
+  await extensionPage.locator('#pmIsMilestone').check();
+  await extensionPage.locator('#pmTaskChat').selectOption('thread-one');
+  await extensionPage.locator('#pmTaskForm button[type="submit"]').click();
+  await extensionPage.waitForFunction(()=>document.querySelectorAll('.pmWorkCard').length===0||
+    document.querySelectorAll('.pmWorkCard').length>=1);
+  const withTask=await send('PM_BOARD_GET',{tabId:projectTabId});
+  assert.equal(withTask.board.tasks.length,1,'UI persists a milestone task');
+  assert.equal(withTask.board.tasks[0].chatId,'thread-one');
+  assert.equal(withTask.board.tasks[0].milestone,true);
+  await extensionPage.locator('#pmSelectVisible').click();
+  await extensionPage.locator('#pmBulkStatus').selectOption('working');
+  await extensionPage.locator('#pmApplyBulkStatus').click();
+  await extensionPage.waitForFunction(()=>document.getElementById('pmBoardNotice')?.textContent?.includes('Saved locally'));
+  const annotated=await send('PM_BOARD_GET',{tabId:projectTabId});
+  assert.equal(annotated.board.threads[existingId].status,'working');
+
   const existing=await send('PM_START',{tabId:projectTabId,config:{
     mode:'existing',target:1,newCount:0,prompt:'PM browser smoke: continue existing.',
     effort:'High',delaySeconds:2,loadTimeoutSeconds:30,keepTabs:true
@@ -203,6 +234,42 @@ try{
   assert.equal(fleetInfo.fleet.threads.length,1);
   assert.equal(fleetInfo.fleet.threads[0].roleName,'Systems Architect');
 
+  // Convert the verified specialist fleet into human-review tasks, without
+  // inventing conversation IDs or reading sibling thread content.
+  await extensionPage.locator('#pmSeedFleetTasks:enabled').waitFor({timeout:25000});
+  extensionPage.once('dialog',dialog=>dialog.accept());
+  await extensionPage.locator('#pmSeedFleetTasks').click();
+  await extensionPage.waitForFunction(()=>
+    !![...document.querySelectorAll('.pmWorkCard')].find(el=>
+      el.textContent.includes('Review Systems Architect findings')),null,{timeout:10000});
+  const planned=await send('PM_BOARD_GET',{tabId:projectTabId});
+  assert.equal(planned.board.tasks.length,2);
+  assert.equal(planned.board.tasks.filter(t=>t.chatId==='seeded-fixture-1').length,1);
+  assert.equal(planned.board.mission,'Investigate reproducible project execution.',
+    'fleet plan does not overwrite an existing Project brief');
+
+  // Dispatch only the selected existing chat from the Project OS control.
+  await extensionPage.locator('#pmDispatchSelected').click();
+  await extensionPage.locator('#prompt').fill('PM browser smoke: selected project workstream.');
+  await extensionPage.locator('#launch').click();
+  // A previous fleet run can still be the current completed job while the
+  // PM panel asynchronously starts the selected-run request.
+  await extensionPage.waitForFunction(async()=>{
+    const state=await chrome.runtime.sendMessage({type:'PM_GET_JOB'});
+    return state.job?.config?.mode==='selected';
+  },null,{timeout:12000});
+  const targeted=await waitDone('Project OS selective dispatch');
+  assert.equal(targeted.completed,1);
+  assert.equal(targeted.config.mode,'selected');
+  assert.equal(targeted.results[0].queueId,existingId);
+  const selectedChat=context.pages().find(p=>p.url()===existingUrl&&p!==existingPages.at(-1));
+  assert.ok(selectedChat,'selected workstream was opened separately');
+  assert.equal((await selectedChat.locator('[data-message-author-role="user"]').allTextContents())[0],
+    'PM browser smoke: selected project workstream.');
+  const historyData=await send('PM_HISTORY_GET',{tabId:projectTabId});
+  assert.ok(historyData.runs.length>=3,'Project OS records completed runs locally');
+
+  console.log('PM Chromium smoke PASSED: Project OS mission, milestone, workstream status and targeted dispatch.');
   console.log('PM Chromium smoke PASSED: Project health, High picker, ProseMirror edit, exactly one Send click,');
   console.log('verified existing thread + new role-specific Project chat + locally saved fleet ledger.');
 }finally{

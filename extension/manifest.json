@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "PM — Proceed Methodically",
   "short_name": "PM",
-  "description": "A mission-first ChatGPT Project fleet command center with verified dispatch, role continuity and safe recovery.",
-  "version": "0.12.0",
+  "description": "Local-first ChatGPT Project command center: fleet dispatch, task management, milestones, statuses and safe follow-ups.",
+  "version": "0.13.0",
   "minimum_chrome_version": "120",
   "permissions": [
     "tabs",
@@ -53,7 +53,7 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "version_name": "0.12.0 — Prime-Time Reliability Candidate",
+  "version_name": "0.13.0 — Project OS",
   "side_panel": {
     "default_path": "panel.html"
   }

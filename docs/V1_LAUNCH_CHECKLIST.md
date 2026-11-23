@@ -132,3 +132,12 @@ Keep the 0.7 installer on GitHub. Stop the run, inspect uncertain sends before m
 - [ ] Visible ChatGPT usage/rate-limit notices block dispatch; user can resume only after the limit is gone.
 - [ ] Real signed-in Chrome: one existing-chat continuation AND one new Project fleet seed each produce exactly one verified user turn, with no manual tab focus.
 - [ ] Review extension permissions, privacy documentation, Chrome Web Store disclosures and applicable ChatGPT service rules before wider distribution.
+
+### PM 0.13 Project OS management acceptance
+- [ ] Native side panel Project OS mission, objective, next action, task statuses, due dates and milestones persist across reload.
+- [ ] Project A management data cannot appear or be overwritten from Project B; revision conflicts are reported.
+- [ ] Selection and bulk status changes are scoped to real discovered Project conversations.
+- [ ] Selected-only dispatcher sends exactly once to chosen known chats and nowhere else.
+- [ ] Verified fleet IDs can create linked review tasks, without duplicate tasks on repeat.
+- [ ] JSON export/import is same-Project and explicitly confirmed, with honest privacy disclosures.
+- [ ] Real Chromium integration passes Project OS and fleet; authenticated ChatGPT production send test remains a separate release gate.

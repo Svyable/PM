@@ -1,7 +1,7 @@
 name: Browser smoke - real Chromium, mock ChatGPT page
 on:
   push:
-    branches: [main, 'release/**', 'fix/**']
+    branches: [main, 'release/**', 'fix/**', 'feat/**']
     paths:
       - 'extension/**'
       - 'tests/browser-smoke.mjs'

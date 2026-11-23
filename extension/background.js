@@ -2,14 +2,15 @@
  * Single bounded queue; never retries an uncertain send.
  */
 'use strict';
-importScripts('fleets.js');
-const VERSION='0.12.0', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
+importScripts('fleets.js','project-data.js');
+const VERSION='0.13.0', KEY='pmJob', PREF='pmPrefs', ALARM='pm-watchdog';
 const PROJECT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/project\/?(?:[?#].*)?$/;
 const CHAT=/^https:\/\/chatgpt\.com\/g\/(g-p-[a-zA-Z0-9-]+)\/c\/([a-zA-Z0-9-]+)\/?$/;
 const DEFAULTS={mode:'existing',newCount:1,target:6,prompt:'proceed methodically',mission:'',fleetTemplate:'brainswarm',effort:'High',delaySeconds:2,loadTimeoutSeconds:180,keepTabs:true};
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
-const CATALOG='pmCatalog', VISITS='pmVisits', FLEETS='pmProjectFleets';
+const CATALOG='pmCatalog', VISITS='pmVisits', FLEETS='pmProjectFleets',
+  BOARDS='pmBoardsV1', RUN_HISTORY='pmRunHistoryV1';
 const projectFromUrl=url=>String(url||'').match(PROJECT)?.[1]||null;
 const chatFromUrl=url=>{
   const match=String(url||'').split(/[?#]/)[0].match(CHAT);
@@ -91,6 +92,7 @@ const error=e=>String(e?.message||e||'Unknown error').slice(0,320);
 async function load(){return(await chrome.storage.local.get(KEY))[KEY]||null;}
 async function save(job){
   job.updatedAt=Date.now();await chrome.storage.local.set({[KEY]:job});
+  if(['done','stopped','error'].includes(job.status))void recordRunHistory(job).catch(()=>{});
   try{
     await chrome.action.setBadgeText({text:job.status==='running'?String(job.completed+job.failed):job.status==='done'?'✓':job.status==='error'?'!':''});
     await chrome.action.setBadgeBackgroundColor({color:'#7889ff'});
@@ -107,12 +109,24 @@ function validate(raw){
   const prompt=String(raw?.prompt||'').trim(),effort=String(raw?.effort||'High');
   const mission=String(raw?.mission||'').trim(),fleetTemplate=String(raw?.fleetTemplate||'brainswarm');
   const delaySeconds=Number(raw?.delaySeconds);
-  if(!['existing','new','mixed','fleet-start','fleet-continue'].includes(mode))
+  if(!['existing','new','mixed','fleet-start','fleet-continue','selected'].includes(mode))
     throw Error('Choose a valid project dispatch strategy.');
   if(!Number.isInteger(target)||target<1||target>1000)throw Error('Choose 1–1,000 conversations.');
-  const newCount=mode==='new'||mode==='fleet-start'?target:mode==='existing'||mode==='fleet-continue'?0:Number(raw?.newCount);
+  const newCount=mode==='new'||mode==='fleet-start'?target:['existing','fleet-continue','selected'].includes(mode)?0:Number(raw?.newCount);
   if(mode==='mixed'&&(!Number.isInteger(newCount)||newCount<1||newCount>=target))
     throw Error('Mixed mode requires at least one existing and one new thread.');
+  const selectedChats=mode==='selected'?raw?.selectedChats:[];
+  if(mode==='selected'){
+    if(!Array.isArray(selectedChats)||selectedChats.length!==target||target>1000)
+      throw Error('Selected mode needs exactly the chosen Project conversations.');
+    const seen=new Set();
+    for(const row of selectedChats){
+      if(typeof row?.id!=='string'||typeof row?.url!=='string'||
+         seen.has(row.id)||row.title!==undefined&&typeof row.title!=='string')
+        throw Error('Duplicate or invalid selected conversation.');
+      seen.add(row.id);
+    }
+  }
   if(!['fleet-start','fleet-continue'].includes(mode)&&(!prompt||prompt.length>16000))
     throw Error('The prompt must contain 1–16,000 characters.');
   if(mode.startsWith('fleet-')){
@@ -127,7 +141,54 @@ function validate(raw){
   if(!Number.isFinite(delaySeconds)||delaySeconds<2||delaySeconds>60)
     throw Error('Spacing must be between 2 and 60 seconds.');
   return{target,mode,newCount,prompt,mission,fleetTemplate,effort,delaySeconds,
-    loadTimeoutSeconds,keepTabs:raw.keepTabs!==false};
+    loadTimeoutSeconds,keepTabs:raw.keepTabs!==false,
+    ...(mode==='selected'?{selectedChats:selectedChats.map(row=>({
+      id:row.id,url:row.url,title:String(row.title||'Untitled chat').slice(0,180)
+    }))}:{})};
+}
+const boardLocks=new Map();
+function withBoardLock(pid,fn){
+  const prev=boardLocks.get(pid)||Promise.resolve();
+  const next=prev.catch(()=>{}).then(fn);
+  const settled=next.catch(()=>{});
+  boardLocks.set(pid,settled);
+  void settled.finally(()=>{if(boardLocks.get(pid)===settled)boardLocks.delete(pid);});
+  return next;
+}
+async function readBoard(pid){
+  const data=(await chrome.storage.local.get(BOARDS))[BOARDS]||{};
+  return globalThis.PMProjectBoard.normalize(data[pid]||globalThis.PMProjectBoard.empty());
+}
+async function updateBoard(pid,mutation,expectedRevision){
+  return withBoardLock(pid,async()=>{
+    const all=(await chrome.storage.local.get(BOARDS))[BOARDS]||{};
+    const existing=globalThis.PMProjectBoard.normalize(all[pid]||globalThis.PMProjectBoard.empty());
+    if(!Number.isInteger(expectedRevision)||existing.revision!==expectedRevision)
+      throw Error('Board was changed in another PM window. Refresh and retry.');
+    const next=globalThis.PMProjectBoard.mutate(existing,mutation);
+    all[pid]=next;
+    await chrome.storage.local.set({[BOARDS]:all});
+    return{ok:true,board:next,summary:globalThis.PMProjectBoard.summary(next)};
+  });
+}
+const historyLocks=new Map();
+async function recordRunHistory(job){
+  if(!['done','stopped','error'].includes(job?.status)||!job.projectId)return;
+  const pid=job.projectId,prev=historyLocks.get(pid)||Promise.resolve();
+  const work=prev.catch(()=>{}).then(async()=>{
+    const all=(await chrome.storage.local.get(RUN_HISTORY))[RUN_HISTORY]||{};
+    const rows=Array.isArray(all[pid])?all[pid]:[];
+    const summary={id:job.id,status:job.status,mode:job.config?.mode||'existing',
+      target:job.target,completed:job.completed,failed:job.failed,
+      uncertain:job.results?.filter(r=>r.uncertain).length||0,
+      startedAt:job.startedAt,finishedAt:job.updatedAt};
+    all[pid]=[summary,...rows.filter(r=>r.id!==job.id)].slice(0,40);
+    await chrome.storage.local.set({[RUN_HISTORY]:all});
+  });
+  const settled=work.catch(()=>{});
+  historyLocks.set(pid,settled);
+  void settled.finally(()=>{if(historyLocks.get(pid)===settled)historyLocks.delete(pid);});
+  return work;
 }
 async function fleetRecord(pid){
   return (await chrome.storage.local.get(FLEETS))[FLEETS]?.[pid]||null;
@@ -245,12 +306,20 @@ async function begin(message,sender){
   const job={
     id:'pm-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),version:VERSION,status:'scanning',
     projectId:match[1],projectTabId:tab.id,target:cfg.target,config:cfg,
-    startedAt:Date.now(),found:0,total:0,index:0,completed:0,failed:0,scanComplete:cfg.mode==='new'||cfg.mode.startsWith('fleet-'),scanStep:0,
+    startedAt:Date.now(),found:0,total:0,index:0,completed:0,failed:0,scanComplete:cfg.mode==='new'||cfg.mode==='selected'||cfg.mode.startsWith('fleet-'),scanStep:0,
     existingTarget:cfg.mode==='fleet-continue'?0:cfg.target-cfg.newCount,
     fleetCycle:cfg.mode==='fleet-continue'?(existingFleet.cycle||0)+1:0,newItemsAdded:false,
     current:null,queue:[],results:[],error:null,pauseReason:null,consecutiveFailures:0,nextAt:0
   };
-  if(cfg.mode==='new'||cfg.mode==='fleet-start'){
+  if(cfg.mode==='selected'){
+    job.queue=cfg.selectedChats.map(row=>{
+      const match=chatFromUrl(row.url);
+      if(!match||match.projectId!==job.projectId||match.chatId!==row.id)
+        throw Error('Selected chat is outside this ChatGPT Project or has changed.');
+      return{kind:'existing',id:row.id,title:row.title,url:row.url};
+    });
+    job.total=job.queue.length;job.found=job.total;job.status='running';
+  }else if(cfg.mode==='new'||cfg.mode==='fleet-start'){
     appendNewThreads(job);
     job.status='running';
   }else if(cfg.mode==='fleet-continue'){
@@ -261,8 +330,9 @@ async function begin(message,sender){
     });
     job.total=job.queue.length;job.status='running';
   }
-  await chrome.storage.local.set({[PREF]:cfg});await save(job);await watchdog();
-  if(cfg.mode==='new'||cfg.mode.startsWith('fleet-')){
+  const {selectedChats,...storedPrefs}=cfg;
+  await chrome.storage.local.set({[PREF]:storedPrefs});await save(job);await watchdog();
+  if(cfg.mode==='new'||cfg.mode==='selected'||cfg.mode.startsWith('fleet-')){
     // Fleet runs are already fully defined: no project chat scan needed.
     setTimeout(()=>void launch(),0);
   }else{
@@ -670,6 +740,29 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
       threads:(record.threads||[]).map(t=>({id:t.id,roleName:t.roleName,title:t.title,url:t.url,slot:t.slot}))
     }:null};
   })():Promise.reject(Error('Extension panel only.')));
+  if(m.type==='PM_BOARD_GET'||m.type==='PM_BOARD_MUTATE'||m.type==='PM_HISTORY_GET')
+    return reply(popup?(async()=>{
+      const tab=await chrome.tabs.get(m.tabId),pid=projectFromUrl(tab?.url);
+      if(!pid)throw Error('Open the ChatGPT Project overview to manage its board.');
+      if(m.type==='PM_HISTORY_GET'){
+        const all=(await chrome.storage.local.get(RUN_HISTORY))[RUN_HISTORY]||{};
+        return{ok:true,projectId:pid,runs:(all[pid]||[]).slice(0,40)};
+      }
+      if(m.type==='PM_BOARD_GET'){
+        const board=await readBoard(pid);
+        return{ok:true,projectId:pid,board,summary:globalThis.PMProjectBoard.summary(board)};
+      }
+      let mutation=m.mutation;
+      if(mutation?.type==='seedFleetTasks'){
+        const fleet=await fleetRecord(pid);
+        if(!fleet?.threads?.length)throw Error('Seed a Project fleet before generating specialist review tasks.');
+        // The worker supplies the verified fleet ledger. Never trust a
+        // panel-provided list of arbitrary chat identities.
+        mutation={type:'seedFleetTasks',mission:fleet.mission||'',
+          threads:fleet.threads.map(t=>({id:t.id,roleName:t.roleName}))};
+      }
+      return updateBoard(pid,mutation,m.expectedRevision);
+    })():Promise.reject(Error('Extension panel only.')));
   if(m.type==='PM_GET_PREFS')return reply(chrome.storage.local.get(PREF).then(r=>({ok:true,prefs:r[PREF]||DEFAULTS})));
   if(m.type==='PM_INSPECT_CONTEXT')return reply(popup?inspect(m.tabId):Promise.reject(Error('Popup only.')));
   if(m.type==='PM_START')return reply(begin(m,s));

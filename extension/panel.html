@@ -2,7 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PM / Project Command Center</title><link rel="stylesheet" href="popup.css"><link rel="stylesheet" href="panel.css"></head>
 <body data-pm-mode="panel">
-<header class="top" aria-label="PM full side panel"><div class="logo" aria-hidden="true"><strong>P<span>M</span></strong><i>•••</i></div><div class="brand"><strong>PM <em>/ Command Center</em></strong><small>Full-height Project command center</small></div><span class="version">v0.11.1</span></header>
+<header class="top" aria-label="PM full side panel"><div class="logo" aria-hidden="true"><strong>P<span>M</span></strong><i>•••</i></div><div class="brand"><strong>PM <em>/ Command Center</em></strong><small>Full-height Project command center</small></div><span class="version">v0.13.0</span></header>
 <main>
 <section class="connection" id="connection" role="status" aria-live="polite"><span id="connectionDot" class="signal"></span><span id="connectionMessage">Detecting current Project…</span></section>
 <div id="notice" role="status" aria-live="polite" hidden></div>
@@ -18,12 +18,60 @@
 <div class="inventoryActions"><button type="button" id="scanProject">Scan entire project</button><button type="button" id="refreshOverview">Refresh status</button></div>
 <p class="footnote">Visited ≠ read. Generating is detectable only in responsive open tabs; ChatGPT does not expose universal unread or background-generation counts here.</p>
 </section>
+<section class="portfolio" id="pmPortfolio" aria-labelledby="pmPortfolioTitle">
+  <div class="sectiontitle"><span id="pmPortfolioTitle" class="eyebrow">PROJECT OS / WORK MANAGEMENT</span><span class="projectLabel">Local · Private</span></div>
+  <p class="portfolioIntro">Manage the mission, next actions, specialist workstreams and deliverables in one place.</p>
+  <div class="portfolioMetrics" aria-live="polite">
+    <div><strong id="pmTasksOpen">0</strong><span>Open tasks</span></div>
+    <div><strong id="pmTasksBlocked">0</strong><span>Blocked</span></div>
+    <div><strong id="pmMilestonesOpen">0</strong><span>Milestones open</span></div>
+    <div><strong id="pmOverdue">0</strong><span>Overdue</span></div>
+  </div>
+  <details class="pmBrief" open>
+    <summary>Project brief <span>Mission → Outcome → Next action</span></summary>
+    <form id="pmBriefForm">
+      <label for="pmMission">Mission</label><textarea id="pmMission" rows="3" maxlength="4000" placeholder="What is the project's purpose?"></textarea>
+      <label for="pmObjective">Definition of success</label><textarea id="pmObjective" rows="2" maxlength="1200" placeholder="What concrete result will count as done?"></textarea>
+      <label for="pmNextAction">Next decisive action</label><input id="pmNextAction" maxlength="1200" placeholder="The most important next move">
+      <div class="pmInline"><button type="submit" class="pmPrimary">Save project brief</button><span id="pmBriefStatus" role="status"></span></div>
+    </form>
+  </details>
+  <div class="pmToolbar">
+    <div class="pmBoardTabs" role="group" aria-label="Project management views">
+      <button type="button" data-pm-view="tasks" aria-pressed="true">Tasks</button>
+      <button type="button" data-pm-view="milestones" aria-pressed="false">Milestones</button>
+      <button type="button" data-pm-view="history" aria-pressed="false">Run history</button>
+    </div>
+    <div class="pmBoardActions"><button type="button" id="pmSeedFleetTasks">Build fleet review plan</button><button type="button" id="pmExportBoard">Export board</button><button type="button" id="pmImportBoard">Import board</button><input type="file" accept="application/json,.json" id="pmBoardFile" hidden></div>
+  </div>
+  <div id="pmTaskView">
+    <form id="pmTaskForm" class="pmTaskForm">
+      <label for="pmTaskTitle">New task or milestone</label>
+      <input id="pmTaskTitle" maxlength="160" required placeholder="Write the next deliverable...">
+      <div class="pmTaskGrid">
+        <div><label for="pmTaskPriority">Priority</label><select id="pmTaskPriority"><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option><option value="low">Low</option></select></div>
+        <div><label for="pmTaskDue">Due date</label><input id="pmTaskDue" type="date"></div>
+      </div>
+      <label for="pmTaskChat">Linked conversation (optional)</label><select id="pmTaskChat"><option value="">No conversation</option></select>
+      <label for="pmTaskNotes">Work item notes</label><textarea id="pmTaskNotes" rows="2" maxlength="2500" placeholder="Expected result, handoff, or blockers…"></textarea>
+      <div class="pmInline"><label for="pmTaskStatus">Status</label><select id="pmTaskStatus"><option value="todo">To do</option><option value="doing">In progress</option><option value="blocked">Blocked</option><option value="done">Done</option></select></div>
+      <label class="pmCheck"><input type="checkbox" id="pmIsMilestone"> This is a milestone</label>
+      <div class="pmInline"><button type="submit" class="pmPrimary" id="pmSaveTask">+ Add work item</button><button type="button" id="pmCancelTaskEdit" hidden>Cancel edit</button></div>
+    </form>
+    <div class="pmTaskControls"><label for="pmTaskFilter">Show</label><select id="pmTaskFilter"><option value="open">Open work</option><option value="all">All work</option><option value="todo">To do</option><option value="doing">In progress</option><option value="blocked">Blocked</option><option value="done">Done</option></select></div>
+    <div id="pmTaskList" class="pmTaskList" aria-live="polite"></div>
+  </div>
+  <div id="pmHistoryView" hidden><div id="pmHistoryList" class="pmHistoryList" aria-live="polite"></div></div>
+  <p id="pmBoardNotice" class="pmBoardNotice" role="status" aria-live="polite"></p>
+  <p class="footnote">Task progress, annotations and statuses are your PM tracking—not ChatGPT native read/unread data. No automatic reading of conversation contents.</p>
+</section>
 <section id="setup" class="dispatchForm">
  <div class="sectiontitle"><span class="eyebrow">NEW DISPATCH</span><span class="introIcon">↗</span></div>
  <form id="launchForm">
   <label for="mode">What should PM do?</label>
   <select id="mode" aria-describedby="modeHelp">
     <option value="existing">Continue existing threads</option>
+    <option value="selected">Send to selected conversations</option>
     <option value="new">Start new project threads</option>
     <option value="mixed">Continue existing + start new</option>
     <option value="fleet-start">Seed a project fleet</option>
@@ -76,9 +124,15 @@
 <section class="inventory">
  <div class="sectiontitle"><span class="eyebrow">PROJECT CONVERSATIONS</span><span id="inventoryCount" class="projectLabel">0 known</span></div>
  <label for="inventoryFilter">Find a conversation</label><input id="inventoryFilter" type="search" placeholder="Search titles or snippets…" autocomplete="off">
+ <div class="pmInventoryTools">
+   <label for="pmThreadFilter">Workstream status</label><select id="pmThreadFilter"><option value="all">All conversations</option><option value="untriaged">Untriaged</option><option value="working">Working</option><option value="waiting">Waiting</option><option value="blocked">Blocked</option><option value="done">Done</option></select>
+   <div class="pmInline"><button type="button" id="pmSelectVisible">Select filtered</button><button type="button" id="pmClearSelected">Clear</button><strong id="pmSelectedCount">0 selected</strong></div>
+   <div class="pmInline"><select id="pmBulkStatus" aria-label="Mark selected conversations"><option value="">Set selected status…</option><option value="working">Working</option><option value="waiting">Waiting</option><option value="blocked">Blocked</option><option value="done">Done</option><option value="untriaged">Untriaged</option></select><button type="button" id="pmApplyBulkStatus">Apply</button></div>
+   <button type="button" class="pmPrimary pmDispatchSelected" id="pmDispatchSelected" disabled>↗ Dispatch to selected</button>
+ </div>
  <div class="inventoryList" id="inventoryList" aria-live="polite"><p class="empty">Discovering conversations…</p></div>
 </section>
 </main>
 <footer><span>✦ &nbsp; Your project, methodically.</span><a href="https://github.com/Svyable/PM" target="_blank" rel="noopener">SOURCE ↗</a><a href="https://github.com/Svyable/PM/blob/main/docs/privacy.html" target="_blank" rel="noopener noreferrer">PRIVACY ↗</a></footer>
-<script src="fleets.js"></script><script src="popup.js"></script><script src="panel.js"></script>
+<script src="fleets.js"></script><script src="popup.js"></script><script src="panel.js"></script><script src="project-manager.js"></script>
 </body></html>
