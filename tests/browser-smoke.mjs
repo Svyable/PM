@@ -233,6 +233,20 @@ try{
   assert.equal(fleetInfo.fleet.threads.length,1);
   assert.equal(fleetInfo.fleet.threads[0].roleName,'Systems Architect');
 
+  // Convert the verified specialist fleet into human-review tasks, without
+  // inventing conversation IDs or reading sibling thread content.
+  await extensionPage.locator('#pmSeedFleetTasks:enabled').waitFor({timeout:25000});
+  extensionPage.once('dialog',dialog=>dialog.accept());
+  await extensionPage.locator('#pmSeedFleetTasks').click();
+  await extensionPage.waitForFunction(()=>
+    !![...document.querySelectorAll('.pmWorkCard')].find(el=>
+      el.textContent.includes('Review Systems Architect findings')),null,{timeout:10000});
+  const planned=await send('PM_BOARD_GET',{tabId:projectTabId});
+  assert.equal(planned.board.tasks.length,2);
+  assert.equal(planned.board.tasks.filter(t=>t.chatId==='seeded-fixture-1').length,1);
+  assert.equal(planned.board.mission,'Investigate reproducible project execution.',
+    'fleet plan does not overwrite an existing Project brief');
+
   // Dispatch only the selected existing chat from the Project OS control.
   await extensionPage.locator('#pmDispatchSelected').click();
   await extensionPage.locator('#prompt').fill('PM browser smoke: selected project workstream.');
