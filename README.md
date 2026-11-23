@@ -22,6 +22,7 @@ A fleet is only useful if you can keep track of what each conversation should do
 - **Tasks and milestones** — assign outcomes, priorities, deadlines, notes, status, and optional conversation links; view open, blocked and overdue work
 - **Workstream tracking** — manually set individual ChatGPT conversations to Untriaged, Working, Waiting, Blocked or Done; add a label and notes to each
 - **Selected dispatch** — search/filter the Project inventory, check the threads you want, and send one prompt only to those exact conversations, still using PM's verified-send safety path
+- **Fleet-to-plan** — one click creates linked, idempotent review tasks from the verified specialist conversation IDs in a saved Project fleet
 - **Bulk operations** — select filtered conversations and update their PM-managed statuses together
 - **Run history** — last 40 completed/stopped/errored PM runs, local to each Project
 - **Export/import** — versioned JSON board backup, restricted to the same Project ID, with confirmation and revision conflict protection
