@@ -1,6 +1,6 @@
 # PM / Proceed Methodically — Changelog
 
-## 0.12.0 — Prime-time reliability candidate (2026-11-22)
+## 0.13.0 — Prime-time reliability candidate (2026-11-22)
 
 **Focus:** trustworthy dispatch, project health, recovery, browser validation.
 
