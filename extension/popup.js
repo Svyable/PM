@@ -61,7 +61,8 @@ async function preferences(){
     const r=await message('PM_GET_PREFS');
     const p=r.prefs||{};
     setField('target',p.target||6);setField('prompt',p.prompt||'proceed methodically');
-    setField('mode',p.mode||'existing');setField('newCount',p.newCount||1);
+    setField('mode',p.mode==='selected'?'existing':p.mode||'existing');
+    setField('newCount',p.newCount||1);
     setField('fleetTemplate',p.fleetTemplate||'brainswarm');
     // A mission belongs to its Project, not to a global preference. Do not
     // carry a previous Project's mission into the next one automatically.
@@ -159,7 +160,15 @@ function updateMode(){
     }
     updateFleetPreview();
   }
-  const mixed=mode==='mixed';
+  const mixed=mode==='mixed',selectedMode=mode==='selected';
+  $('target').readOnly=selectedMode;
+  if(selectedMode){
+    const chosen=globalThis.PMSelection?.snapshot();
+    $('target').value=chosen?.chats?.length||0;
+  }
+  document.querySelectorAll('[data-count]').forEach(button=>{
+    button.disabled=selectedMode;
+  });
   $('splitRow').hidden=!mixed;
   $('newCount').required=mixed;
   $('newCount').max=Math.max(1,total-1);
@@ -170,8 +179,9 @@ function updateMode(){
     $('splitSummary').textContent=total<2?'Mixed mode needs 2 or more conversations.':
       (total-news)+' existing + '+news+' new';
   }
-  $('modeHelp').textContent=mode==='new'
-    ?'Each new conversation starts in this Project with the instruction as its first message.'
+  $('modeHelp').textContent=mode==='selected'
+    ?'Only your checked conversations receive this instruction. Select them in Project Conversations below.'
+    :mode==='new'?'Each new conversation starts in this Project with the instruction as its first message.'
     :mode==='fleet-start'?'Describe one mission. PM creates independent, role-specific conversations in the current Project.'
     :mode==='fleet-continue'?'PM returns to the chats created by this template, keeping each original role.'
     :mixed?'Continue existing chats first, then create the selected number of new Project chats.'
@@ -285,9 +295,17 @@ $('launchForm').addEventListener('submit',async e=>{
   const config={
     target:Number($('target').value),mode:$('mode').value,
     newCount:Number($('newCount').value),prompt:$('prompt').value.trim(),
+    ...( $('mode').value==='selected' ?{
+      selectedChats:globalThis.PMSelection?.snapshot()?.chats||[]
+    }:{} ),
     mission:$('mission').value.trim(),fleetTemplate:$('fleetTemplate').value,effort:$('effort').value,
     delaySeconds:Number($('delay').value),loadTimeoutSeconds:Number($('loadTimeout').value),keepTabs:$('keepTabs').checked
   };
+  if(config.mode==='selected'&&(
+    !globalThis.PMSelection||globalThis.PMSelection.snapshot().projectId!==activeProjectId||
+    config.target!==config.selectedChats.length)){
+    inform('Select at least one conversation from this Project before launching.');return;
+  }
   if(!Number.isInteger(config.target)||config.target<1||config.target>1000){inform('Choose 1–1,000 conversations.');return;}
   if(!config.mode.startsWith('fleet-')&&(!config.prompt||config.prompt.length>16000)){inform('Enter a prompt of 1–16,000 characters.');return;}
   if(config.mode==='fleet-start'&&(!config.mission||config.mission.length>4000)){inform('Enter a Project mission (up to 4,000 characters).');return;}
@@ -316,6 +334,9 @@ $('mode').addEventListener('change',()=>{
 });
 $('fleetTemplate').addEventListener('change',updateMode);
 $('mission').addEventListener('input',()=>{if($('mode').value.startsWith('fleet-'))updateFleetPreview();});
+window.addEventListener('pm:selection',()=>{
+  if($('mode').value==='selected')updateMode();
+});
 $('newCount').addEventListener('input',updateMode);
 document.querySelectorAll('[data-count]').forEach(b=>b.addEventListener('click',()=>{$('target').value=b.dataset.count;markPreset();updateMode();}));
 $('export').addEventListener('click',()=>{
