@@ -1,6 +1,6 @@
 # PM / Proceed Methodically
 
-**One mission. A fleet of specialized conversations.** PM is a local-first Chrome extension that can initialize a ChatGPT Project with role-specific threads, continue a saved fleet, or dispatch a single prompt across selected existing conversations.
+**One mission. A fleet of specialized conversations. One Project OS.** PM is a local-first Chrome extension that seeds role-specific ChatGPT Project threads, continues saved fleets, manages tasks and milestones, tracks individual workstreams, and dispatches exactly to the conversations you select.
 
 [**Download PM v0.13.0 candidate (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.13.0.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
 
@@ -13,6 +13,24 @@
 5. **Reload your existing ChatGPT Project tab** after installing or updating the extension. On its overview page (ending in `/project`), click the PM toolbar icon or the small lower-right PM launcher to open Chrome's native side panel. Try **1 conversation** first.
 
 No PM service account, backend, or telemetry.
+
+## PM 0.13 — Project OS / Portfolio Command Center
+
+A fleet is only useful if you can keep track of what each conversation should do next. PM now has a **Project OS** built into its full Chrome side panel.
+
+- **Project brief** — mission, definition of success, and next decisive action
+- **Tasks and milestones** — assign outcomes, priorities, deadlines, notes, status, and optional conversation links; view open, blocked and overdue work
+- **Workstream tracking** — manually set individual ChatGPT conversations to Untriaged, Working, Waiting, Blocked or Done; add a label and notes to each
+- **Selected dispatch** — search/filter the Project inventory, check the threads you want, and send one prompt only to those exact conversations, still using PM's verified-send safety path
+- **Bulk operations** — select filtered conversations and update their PM-managed statuses together
+- **Run history** — last 40 completed/stopped/errored PM runs, local to each Project
+- **Export/import** — versioned JSON board backup, restricted to the same Project ID, with confirmation and revision conflict protection
+
+All Project OS data lives in **Chrome's extension-local storage**. It is your own tracking, not ChatGPT's native unread/completion state, not shared with other users, and not uploaded to a PM-operated server. Boards permit up to 500 work items and 1,000 annotated conversations. Only ChatGPT pages you elect to visit/scan provide the inventory and visible snippets. If the list is incomplete, run **Scan entire project**.
+
+**Start:** Open a ChatGPT Project overview, open the PM side panel, write a Project brief, add a milestone, select the conversations that should receive the next prompt and use **Dispatch to selected**. You can still seed or continue an entire specialized fleet.
+
+[**Complete Project OS user guide**](docs/PROJECT_OS.md) · [**Fleet templates**](docs/FLEETS.md) · [**Privacy**](docs/privacy.html)
 
 ## PM 0.12 — Release-candidate reliability
 
