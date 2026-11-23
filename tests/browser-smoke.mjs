@@ -251,6 +251,12 @@ try{
   await extensionPage.locator('#pmDispatchSelected').click();
   await extensionPage.locator('#prompt').fill('PM browser smoke: selected project workstream.');
   await extensionPage.locator('#launch').click();
+  // A previous fleet run can still be the current completed job while the
+  // PM panel asynchronously starts the selected-run request.
+  await extensionPage.waitForFunction(async()=>{
+    const state=await chrome.runtime.sendMessage({type:'PM_GET_JOB'});
+    return state.job?.config?.mode==='selected';
+  },null,{timeout:12000});
   const targeted=await waitDone('Project OS selective dispatch');
   assert.equal(targeted.completed,1);
   assert.equal(targeted.config.mode,'selected');
