@@ -101,6 +101,7 @@ for(const file of ['background.js','content.js','project-panel.js','popup.js','p
 }
 const manifestFile=resolve(unpacked,'manifest.json');
 const manifest=JSON.parse(await readFile(manifestFile,'utf8'));
+assert.equal(manifest.version,'0.13.0','browser smoke must test the versioned Project OS installer source');
 manifest.host_permissions=['http://127.0.0.1/*'];
 for(const script of manifest.content_scripts)script.matches=['http://127.0.0.1/*'];
 await writeFile(manifestFile,JSON.stringify(manifest));
