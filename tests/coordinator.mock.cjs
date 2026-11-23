@@ -247,6 +247,76 @@ function setup(options={}){
   assert.equal(limitedAfterInput.storage.pmJob.index,0);
   assert.match(limitedAfterInput.storage.pmJob.pauseReason,/usage or rate limit/i);
 
+  // Project OS is scoped to the selected Project; revisions prevent lost
+  // concurrent edits between multiple Chrome side panels.
+  const boardEnv=setup();
+  const emptyBoard=await boardEnv.request('PM_BOARD_GET',{tabId:1});
+  assert.equal(emptyBoard.ok,true);
+  assert.equal(emptyBoard.projectId,project);
+  assert.equal(emptyBoard.board.revision,0);
+  const initialBoard=await boardEnv.request('PM_BOARD_MUTATE',{
+    tabId:1,expectedRevision:0,mutation:{
+      type:'saveBrief',mission:'Deliver reliable Project OS tools.',
+      objective:'Release a tested Chrome extension.',
+      nextAction:'Audit the new board.'
+    }
+  });
+  assert.equal(initialBoard.ok,true);
+  assert.equal(initialBoard.board.revision,1);
+  const concurrentBoard=await Promise.all([
+    boardEnv.request('PM_BOARD_MUTATE',{tabId:1,expectedRevision:1,
+      mutation:{type:'addTask',task:{title:'First milestone',milestone:true,priority:'high'}}}),
+    boardEnv.request('PM_BOARD_MUTATE',{tabId:1,expectedRevision:1,
+      mutation:{type:'addTask',task:{title:'Second milestone',milestone:true}}})
+  ]);
+  assert.equal(concurrentBoard.filter(x=>x.ok).length,1,'one of two stale writes must fail');
+  assert.equal(concurrentBoard.filter(x=>!x.ok).length,1);
+  const boardNow=await boardEnv.request('PM_BOARD_GET',{tabId:1});
+  assert.equal(boardNow.board.tasks.length,1);
+  assert.equal(boardNow.board.revision,2);
+  boardEnv.tabs.set(99,{id:99,url:'https://chatgpt.com/g/g-p-unrelated/project',status:'complete',ready:true});
+  const unrelated=await boardEnv.request('PM_BOARD_GET',{tabId:99});
+  assert.equal(unrelated.ok,true);
+  assert.equal(unrelated.board.revision,0);
+  assert.equal(unrelated.board.tasks.length,0);
+  assert.equal((await boardEnv.request('PM_BOARD_MUTATE',{
+    tabId:99,expectedRevision:0,mutation:{type:'setThread',
+      chatId:'other-thread',patch:{status:'working'}}
+  })).ok,true);
+  assert.equal((await boardEnv.request('PM_BOARD_GET',{tabId:1})).board.threads['other-thread'],undefined);
+  assert.equal((await boardEnv.request('PM_BOARD_MUTATE',{
+    tabId:1,expectedRevision:0,mutation:{type:'addTask',task:{title:'Stale write'}}
+  })).ok,false,'stale revision must not overwrite a newer board');
+  assert.equal((await boardEnv.request('PM_BOARD_GET',{tabId:1})).board.tasks.length,1);
+
+  // Selected-only dispatch reads exact catalog rows, never scans or sends to
+  // an unrelated Project. Reject duplicate or forged selections.
+  const chosen=setup();
+  const selectionConfig={...chosen.prefs,target:1,mode:'selected',
+    selectedChats:[chats[1]]};
+  assert.equal((await chosen.request('PM_START',{tabId:1,config:selectionConfig})).ok,true);
+  await waitFor(()=>chosen.storage.pmJob?.status==='done','targeted single-chat dispatch',9000);
+  assert.equal(chosen.storage.pmJob.completed,1);
+  assert.equal(chosen.attempts.length,1);
+  assert.equal(chosen.attempts[0].chatId,'chat-two');
+  assert.equal(chosen.storage.pmJob.found,1);
+  assert.equal(chosen.storage.pmJob.scanComplete,true);
+  const selectedPrefs=await chosen.request('PM_GET_PREFS');
+  assert.equal(selectedPrefs.prefs.selectedChats,undefined,'large Project selections must not persist as defaults');
+  assert.equal((await chosen.request('PM_START',{tabId:1,config:{
+    ...selectionConfig,target:2,selectedChats:[chats[1],chats[1]]
+  }})).ok,false);
+  assert.equal((await chosen.request('PM_START',{tabId:1,config:{
+    ...selectionConfig,selectedChats:[{
+      id:'other-thread',url:'https://chatgpt.com/g/g-p-other/c/other-thread',title:'Wrong Project'
+    }]
+  }})).ok,false);
+  await waitFor(()=>!!chosen.storage.pmRunHistoryV1?.[project]?.length,'record local dispatch history');
+  assert.equal(chosen.storage.pmRunHistoryV1[project][0].completed,1);
+  const runHistory=await chosen.request('PM_HISTORY_GET',{tabId:1});
+  assert.equal(runHistory.ok,true);
+  assert.equal(runHistory.runs[0].mode,'selected');
+
   const projectSelection=setup();
   const health=await projectSelection.request('PM_GET_HEALTH',{tabId:1});
   assert.equal(health.ok,true);
