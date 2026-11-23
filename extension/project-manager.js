@@ -5,7 +5,7 @@
   const statuses=['todo','doing','blocked','done'];
   const statusNames={todo:'To do',doing:'In progress',blocked:'Blocked',done:'Done'};
   const priorities={critical:'Critical',high:'High',normal:'Normal',low:'Low'};
-  let context=null,board=null,history=[],summary=null,view='tasks',taskFilter='open';
+  let context=null,board=null,history=[],fleet=null,summary=null,view='tasks',taskFilter='open';
   let busy=false,loading=false,editingTaskId=null,briefDirty=false,lastSync=0;
   const text=(id,value)=>{const el=$(id);if(el)el.textContent=String(value);};
   const notify=(message,bad=false)=>{
@@ -178,6 +178,10 @@
       button.setAttribute('aria-pressed',String(button.dataset.pmView===view));
     });
     setControls(true);
+    $('pmSeedFleetTasks').disabled=!(fleet?.threads?.length);
+    $('pmSeedFleetTasks').title=fleet?.threads?.length?
+      'Create idempotent PM review tasks linked to the saved specialist chats':
+      'Seed a Project fleet first';
   }
   async function load(force=false){
     if(!context?.tabId||loading)return;
@@ -185,11 +189,12 @@
     loading=true;
     const current=context.projectId,tabId=context.tabId;
     try{
-      const [b,h]=await Promise.all([
-        request('PM_BOARD_GET',{tabId}),request('PM_HISTORY_GET',{tabId})
+      const [b,h,f]=await Promise.all([
+        request('PM_BOARD_GET',{tabId}),request('PM_HISTORY_GET',{tabId}),
+        request('PM_GET_FLEET',{tabId})
       ]);
       if(current!==context?.projectId)return;
-      board=b.board;history=h.runs||[];summary=b.summary;
+      board=b.board;history=h.runs||[];summary=b.summary;fleet=f.fleet||null;
       globalThis.PMBoardState=board;
       lastSync=Date.now();
       render();window.dispatchEvent(new Event('pm:board-updated'));
@@ -220,14 +225,14 @@
   window.addEventListener('pm:project',event=>{
     const data=event.detail;
     if(!data?.projectId||!data.tabId){
-      context=null;board=null;summary=null;history=[];globalThis.PMBoardState=null;
+      context=null;board=null;summary=null;history=[];fleet=null;globalThis.PMBoardState=null;
       setControls(false);notify('Open a ChatGPT Project overview to manage its work.');
       return;
     }
     const changed=context?.projectId!==data.projectId;
     context={projectId:data.projectId,tabId:data.tabId,snapshot:data.snapshot};
     if(changed){
-      board=null;history=[];summary=null;briefDirty=false;lastSync=0;editingTaskId=null;
+      board=null;history=[];summary=null;fleet=null;briefDirty=false;lastSync=0;editingTaskId=null;
       globalThis.PMBoardState=null;
       setControls(false);notify('Loading Project Board…');
     }
@@ -284,6 +289,17 @@
     if(event.detail.projectId!==context?.projectId)return;
     void mutate({type:'bulkThreadStatus',
       chatIds:event.detail.chatIds,status:event.detail.status});
+  });
+  $('pmSeedFleetTasks').addEventListener('click',async()=>{
+    if(!board||!context)return;
+    const threads=fleet?.threads||[];
+    if(!threads.length){notify('Seed a Project fleet first, then refresh Project OS.',true);return;}
+    const linked=new Set(board.tasks.map(t=>t.chatId).filter(Boolean));
+    const newCount=threads.filter(t=>!linked.has(t.id)).length;
+    if(!newCount){notify('Every saved specialist chat already has a linked work item.');return;}
+    if(!confirm('Create '+newCount+' PM review tasks linked to the saved specialist chats? Existing tasks will not be replaced.'))return;
+    const saved=await mutate({type:'seedFleetTasks'});
+    if(saved)notify('Added '+newCount+' specialist review tasks from the verified fleet ledger.');
   });
   $('pmExportBoard').addEventListener('click',()=>{
     if(!board||!context)return;
