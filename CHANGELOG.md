@@ -6,6 +6,7 @@
 
 - **Project brief:** editable Mission, Definition of success and Next decisive action, stored separately for each Project ID.
 - **Task and milestone board:** actionable deliverables, notes, due dates, priorities, status and optional linked conversation, plus overview counts for open/blocked/overdue work.
+- **Fleet review plan:** generate one pending review task per verified specialist conversation, linked to its chat ID, without duplicating existing linked tasks.
 - **Conversation workstreams:** manually maintained status (Untriaged, Working, Waiting, Blocked, Done), custom labels, notes and bulk status changes.
 - **Selected dispatch:** check specific discovered chats, then dispatch only to those exact conversations using PM's existing verified-send coordinator; reject duplicates, foreign Project URLs and mismatched counts.
 - **Local run history:** keep the latest 40 terminal run summaries per Project.
