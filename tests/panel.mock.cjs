@@ -44,6 +44,16 @@ function environment(route){
   assert.ok(html.includes('value="fleet-start"')&&html.includes('value="fleet-continue"'));
   assert.ok(html.includes('id="fleetTemplate"')&&html.includes('id="mission"')&&html.includes('id="fleetPreview"'));
   assert.ok(html.includes('id="fleetWorkstreams"'),'fleet dashboard must show mapped role conversations');
+  for(const id of ['pmPortfolio','pmBriefForm','pmTaskForm','pmTaskList',
+    'pmSeedFleetTasks','pmThreadFilter','pmSelectedCount','pmDispatchSelected',
+    'pmHistoryList','pmExportBoard','pmImportBoard']){
+    assert.ok(html.includes('id="'+id+'"'),'Project OS missing control '+id);
+  }
+  assert.ok(html.includes('value="selected"'),'selected-thread mode must be visible');
+  assert.ok(html.indexOf('src="panel.js"')<html.indexOf('src="project-manager.js"'),
+    'Project OS listens to the native inventory context');
+  assert.equal(manifest.permissions.includes('cookies'),false);
+  assert.equal(manifest.permissions.includes('webRequest'),false);
   assert.ok(html.indexOf('src="fleets.js"')<html.indexOf('src="popup.js"'),
     'Fleet templates must load before fleet wizard controls');
   assert.ok(!manifest.web_accessible_resources,'native panel should not require public iframe resources');
