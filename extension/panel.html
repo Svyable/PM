@@ -53,8 +53,10 @@
         <div><label for="pmTaskDue">Due date</label><input id="pmTaskDue" type="date"></div>
       </div>
       <label for="pmTaskChat">Linked conversation (optional)</label><select id="pmTaskChat"><option value="">No conversation</option></select>
+      <label for="pmTaskNotes">Work item notes</label><textarea id="pmTaskNotes" rows="2" maxlength="2500" placeholder="Expected result, handoff, or blockers…"></textarea>
+      <div class="pmInline"><label for="pmTaskStatus">Status</label><select id="pmTaskStatus"><option value="todo">To do</option><option value="doing">In progress</option><option value="blocked">Blocked</option><option value="done">Done</option></select></div>
       <label class="pmCheck"><input type="checkbox" id="pmIsMilestone"> This is a milestone</label>
-      <button type="submit" class="pmPrimary">+ Add work item</button>
+      <div class="pmInline"><button type="submit" class="pmPrimary" id="pmSaveTask">+ Add work item</button><button type="button" id="pmCancelTaskEdit" hidden>Cancel edit</button></div>
     </form>
     <div class="pmTaskControls"><label for="pmTaskFilter">Show</label><select id="pmTaskFilter"><option value="open">Open work</option><option value="all">All work</option><option value="todo">To do</option><option value="doing">In progress</option><option value="blocked">Blocked</option><option value="done">Done</option></select></div>
     <div id="pmTaskList" class="pmTaskList" aria-live="polite"></div>
