@@ -417,6 +417,23 @@ function setup(options={}){
   assert.ok(ledger);
   assert.equal(ledger.templateId,'business');
   assert.equal(ledger.threads.length,3);
+  const fleetBoard=await seeded.request('PM_BOARD_GET',{tabId:1});
+  assert.equal(fleetBoard.board.revision,0);
+  const generatedTasks=await seeded.request('PM_BOARD_MUTATE',{tabId:1,
+    expectedRevision:0,mutation:{type:'seedFleetTasks',threads:[
+      {id:'forged-chat',roleName:'Forged Role'}
+    ]}
+  });
+  assert.equal(generatedTasks.ok,true);
+  assert.equal(generatedTasks.board.tasks.length,3);
+  assert.equal(generatedTasks.board.mission,seedMission);
+  assert.deepEqual(generatedTasks.board.tasks.map(t=>t.chatId),
+    ledger.threads.map(t=>t.id),'worker ignores arbitrary caller-supplied thread list');
+  const repeatTasks=await seeded.request('PM_BOARD_MUTATE',{tabId:1,
+    expectedRevision:generatedTasks.board.revision,mutation:{type:'seedFleetTasks'}
+  });
+  assert.equal(repeatTasks.ok,true);
+  assert.equal(repeatTasks.board.tasks.length,3,'repeat review-plan action is idempotent');
   const fleetInfo=await seeded.request('PM_GET_FLEET',{tabId:1});
   assert.equal(fleetInfo.ok,true);
   assert.equal(fleetInfo.fleet.threads.length,3);
