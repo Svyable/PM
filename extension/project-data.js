@@ -31,20 +31,20 @@
       milestone:(input.milestone??existing?.milestone)===true,
       chatId:bounded(input.chatId??existing?.chatId,128),
       createdAt:existing?.createdAt||Number(input.createdAt)||now,
-      updatedAt:now
+      updatedAt:existing?now:(Number(input.updatedAt)||now)
     };
     if(!result.title)throw Error('Task title is required.');
     if(!idPattern.test(result.id||''))throw Error('Invalid task identity.');
     if(result.chatId&&!idPattern.test(result.chatId))throw Error('Invalid linked chat ID.');
     return result;
   }
-  function thread(input,existing={},now=Date.now()){
+  function thread(input,existing=null,now=Date.now()){
     if(!input||typeof input!=='object'||Array.isArray(input))throw Error('Invalid conversation tracking.');
     return{
-      status:choice(input.status??existing.status,threadStatuses,'untriaged'),
-      label:bounded(input.label??existing.label,80),
-      notes:bounded(input.notes??existing.notes,1200),
-      updatedAt:now
+      status:choice(input.status??existing?.status,threadStatuses,'untriaged'),
+      label:bounded(input.label??existing?.label,80),
+      notes:bounded(input.notes??existing?.notes,1200),
+      updatedAt:existing?now:(Number(input.updatedAt)||now)
     };
   }
   function normalize(raw,now=Date.now()){
@@ -67,7 +67,7 @@
     if(entries.length>limits.threads)throw Error('Board has too many tracked conversations.');
     for(const [id,info] of entries){
       if(!idPattern.test(id))throw Error('Invalid tracked conversation identity.');
-      result.threads[id]=thread(info,{},now);
+      result.threads[id]=thread(info,null,now);
     }
     result.updatedAt=Number(raw.updatedAt)||now;
     return result;
