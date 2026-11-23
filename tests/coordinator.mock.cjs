@@ -6,6 +6,7 @@ const vm=require('node:vm');
 const path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'..','extension','background.js'),'utf8');
 const fleetSource=fs.readFileSync(path.join(__dirname,'..','extension','fleets.js'),'utf8');
+const boardSource=fs.readFileSync(path.join(__dirname,'..','extension','project-data.js'),'utf8');
 const project='g-p-example';
 const projectURL='https://chatgpt.com/g/'+project+'/project';
 const chats=[
@@ -68,8 +69,8 @@ function setup(options={}){
         if(!injected.has(id))throw Error('Receiving end does not exist');
         const tab=tabs.get(id);if(!tab)throw Error('Tab not found');
         if(msg.type==='PM_PING'){
-          if(id===1||tab.url===projectURL)return{ok:true,version:'0.12.0',projectId:project,chat:null};
-          return{ok:true,version:'0.12.0',projectId:null,chat:{projectId:project,chatId:tab.route}};
+          if(id===1||tab.url===projectURL)return{ok:true,version:'0.13.0',projectId:project,chat:null};
+          return{ok:true,version:'0.13.0',projectId:null,chat:{projectId:project,chatId:tab.route}};
         }
         if(msg.type==='PM_CONTEXT')return{ok:true,projectId:project,count:2,chats,projectTitle:'/demo'};
         if(msg.type==='PM_HEALTH')return{ok:true,projectId:project,composerReady:true,effort:'High',generating:false,draftPresent:false};
@@ -166,9 +167,10 @@ function setup(options={}){
     action:{async setBadgeText(){},async setBadgeBackgroundColor(){}}
   };
   const ctx={chrome,console,Date,Math,Promise,URL,setTimeout,clearTimeout,
-    importScripts(file){if(file!=='fleets.js')throw Error('Unexpected import: '+file);}};
+    importScripts(file){if(!['fleets.js','project-data.js'].includes(file))throw Error('Unexpected import: '+file);}};
   vm.createContext(ctx);
   vm.runInContext(fleetSource,ctx,{filename:'fleets.js'});
+  vm.runInContext(boardSource,ctx,{filename:'project-data.js'});
   vm.runInContext(source,ctx,{filename:'background.js'});
   function request(type,args={},tabId=null){
     const sender=tabId===null?{url:'chrome-extension://pm/popup.html'}:{tab:tabs.get(tabId)};
