@@ -23,16 +23,20 @@
 <li><strong>Project inventory:</strong> identifiers, chat URLs, titles, visible snippets, and update labels from ChatGPT Project pages that you choose to view or scan.</li>
 <li><strong>Run activity:</strong> selected chat IDs and URLs, message-send verification results, errors, approximate timing information, and queue state.</li>
 <li><strong>Observed browser activity:</strong> whether relevant ChatGPT tabs are open, whether responsive open tabs expose a generation indicator, and locally recorded visit timestamps.</li>
+<li><strong>Project OS management data:</strong> a Project-specific mission, definition of success, next action, user-authored tasks and milestones, priorities, due dates, notes, conversation labels and manual status; brief local run-history summaries.</li>
 </ul>
 <p>PM checks for a newly rendered user message matching your chosen prompt to verify a send. In Project fleet mode, each new conversation receives an assignment specific to its role and the mission you provide; PM stores a local role-to-conversation mapping to support future continuation. It is <strong>not designed to retrieve, export, or store full assistant responses</strong>. PM does not ask for account passwords or read browser cookies.</p>
 <h2>Where information goes</h2>
-<p>PM uses <strong>Chrome local extension storage</strong> for preferences, the current/latest job, discovered project metadata, and visit timestamps. The extension has no PM-operated analytics server, database, third-party tracker, or remote code loader. There is no automatic sale or upload of this locally stored information to PM's maintainers.</p>
+<p>PM uses <strong>Chrome local extension storage</strong> for preferences, the current/latest job, discovered project metadata, visit timestamps, Project OS boards, and recent run-history summaries. The extension has no PM-operated analytics server, database, third-party tracker, or remote code loader. There is no automatic sale or upload of this locally stored information to PM's maintainers.</p>
 <p>When you explicitly launch a dispatch, the prompt is submitted <strong>to ChatGPT</strong> through the interface on the selected conversation pages, just as if you had typed and sent it. In new-thread mode, PM opens the Project's new-chat composer and submits that prompt as the first message of a freshly created conversation; it stores the resulting URL and ID locally when verified. ChatGPT processes that submission under its own policies. PM cannot control data handling by ChatGPT, Chrome, GitHub, or their underlying infrastructure.</p>
+<h2>Project Board exports and imports</h2>
+<p>Exporting a Project Board creates a JSON file in your browser containing the Project ID plus any goals, task descriptions, deadlines and notes you entered. This backup may contain sensitive text; you control where it is stored or shared. Importing requires a user-selected JSON file for the <strong>same Project ID</strong> and an explicit replacement confirmation. Importing changes PM's own local Board data, <strong>not</strong> ChatGPT conversations, messages or Project configuration. Up to 500 tasks and 1,000 tracked conversation IDs are supported per board. PM does not automatically upload these files.</p>
+<p>PM's Project workstream status (Working, Waiting, Blocked, Done), task completion and deadlines are user-authored annotations. They do not imply PM read a chat's response, verified an AI job completed, or accessed a private ChatGPT status API.</p>
 <h2>Permissions and purpose</h2>
 <ul>
 <li><strong>chatgpt.com host access:</strong> read visible Project conversation links and interact with the chat composer only when a dispatch is triggered.</li>
 <li><strong>tabs:</strong> open the selected conversations, identify project tabs, and display open-tab status.</li>
-<li><strong>storage:</strong> persist preferences, inventory, visits, and job recovery state locally.</li>
+<li><strong>storage:</strong> persist preferences, inventory, visits, task boards, workstream notes, run history and job recovery state locally.</li>
 <li><strong>scripting:</strong> reconnect the UI adapter if a ChatGPT tab predates extension installation or update.</li>
 <li><strong>alarms:</strong> check and recover from interrupted or delayed dispatch states.</li>
 </ul>
