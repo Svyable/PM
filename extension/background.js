@@ -752,7 +752,16 @@ chrome.runtime.onMessage.addListener((m,s,sendResponse)=>{
         const board=await readBoard(pid);
         return{ok:true,projectId:pid,board,summary:globalThis.PMProjectBoard.summary(board)};
       }
-      return updateBoard(pid,m.mutation,m.expectedRevision);
+      let mutation=m.mutation;
+      if(mutation?.type==='seedFleetTasks'){
+        const fleet=await fleetRecord(pid);
+        if(!fleet?.threads?.length)throw Error('Seed a Project fleet before generating specialist review tasks.');
+        // The worker supplies the verified fleet ledger. Never trust a
+        // panel-provided list of arbitrary chat identities.
+        mutation={type:'seedFleetTasks',mission:fleet.mission||'',
+          threads:fleet.threads.map(t=>({id:t.id,roleName:t.roleName}))};
+      }
+      return updateBoard(pid,mutation,m.expectedRevision);
     })():Promise.reject(Error('Extension panel only.')));
   if(m.type==='PM_GET_PREFS')return reply(chrome.storage.local.get(PREF).then(r=>({ok:true,prefs:r[PREF]||DEFAULTS})));
   if(m.type==='PM_INSPECT_CONTEXT')return reply(popup?inspect(m.tabId):Promise.reject(Error('Popup only.')));
