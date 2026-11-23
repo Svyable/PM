@@ -2,7 +2,7 @@
 
 **One mission. A fleet of specialized conversations.** PM is a local-first Chrome extension that can initialize a ChatGPT Project with role-specific threads, continue a saved fleet, or dispatch a single prompt across selected existing conversations.
 
-[**Download PM v0.12.0 candidate (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.12.0.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
+[**Download PM v0.13.0 candidate (ZIP)**](https://github.com/Svyable/PM/raw/refs/heads/main/docs/downloads/PM-Chrome-Extension-v0.13.0.zip) · [**Product site + complete guide**](https://svyable.github.io/PM/) · [**Website source**](docs/index.html)
 
 ## Install
 
@@ -54,7 +54,7 @@ If ChatGPT changes route **before** Send, PM tries restoring the originally queu
 
 **Upgrade:** stop any run created by an earlier PM version; load PM 0.10 unpacked at `chrome://extensions`, and refresh your Project page. Click the PM toolbar icon or the bottom-right on-page launcher.
 
-## PM 0.12.0 — Stronger Send and verification
+## PM 0.13.0 — Stronger Send and verification
 
 - Prefer the **enabled Send button in the active composer**, not an obsolete disabled control or an unrelated page button.
 - Wait for the composer to settle after prompt injection, fail safely if it is replaced, and never overwrite a draft to coerce the editor.
@@ -120,7 +120,7 @@ PM **streams the first discovered chat batch into the dispatch queue immediately
 
 ## Preparing for PM v1
 
-**0.12.0 is a feature candidate, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
+**0.13.0 is a feature candidate, not a stable v1 release.** Before the product can be advertised publicly as v1, the maintainer needs to verify the extension in a signed-in Chrome session, enable GitHub Pages, approve a source license and review applicable OpenAI/Chrome Web Store terms.
 
 - [v1 go/no-go and live-browser test checklist](docs/V1_LAUNCH_CHECKLIST.md)
 - [Authenticated browser QA runbook](docs/QA_RUNBOOK.md)
