@@ -60,6 +60,8 @@ The **Run history** view shows up to 40 recently completed, stopped or errored P
 
 Start a Business Model Lab, Scientific Research Lab, Math Proof Engine or Brainswarm fleet using PM's launch controls. Successful new conversation IDs and their specialist roles are saved in the fleet ledger. You can link board tasks to those chat IDs once the Project inventory has discovered them. Use **Continue a saved project fleet** to send role-specific follow-ups.
 
+Once PM has verified the fleet's new conversation IDs, **Build fleet review plan** (on the Project OS toolbar) generates one pending review task per saved specialist workstream, linked to its real ChatGPT chat. It fills the Project mission and next action only if those brief fields are still empty. Repeating the action is idempotent: an already linked chat receives no duplicate task. PM does not read specialist answers when creating the review plan. The tasks are prompts for human evaluation, not claims that work has finished.
+
 PM does not automatically aggregate sibling conversations, extract full transcripts, update task statuses based on answer content, or create a synchronized multi-user team. The board is a local control plane for people coordinating their own Project work.
 
 ## Data and limitations
