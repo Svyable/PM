@@ -8,7 +8,9 @@
   const idPattern=/^[a-zA-Z0-9-]{1,128}$/;
   function bounded(value,max=500){return String(value??'').trim().slice(0,max);}
   function choice(value,allowed,defaultValue){
-    return allowed.includes(value)?value:defaultValue;
+    if(value===undefined||value===null||value==='')return defaultValue;
+    if(!allowed.includes(value))throw Error('Invalid status or priority.');
+    return value;
   }
   function date(value){
     if(!value)return'';
