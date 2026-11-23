@@ -48,13 +48,27 @@ assert.equal(counts.blockedConversations,2);
 board=model.mutate(board,{type:'editTask',id:'t-test-1',patch:{status:'done'}},{now:now+2300});
 assert.equal(model.summary(board,'2026-11-22').milestoneOpen,0);
 assert.equal(model.summary(board,'2026-11-22').overdue,0);
+let planIds=0;
+board=model.mutate(board,{type:'seedFleetTasks',mission:'Investigate PM workstreams.',threads:[
+  {id:'chat-1',roleName:'Existing Role'}, {id:'chat-3',roleName:'Proof Auditor'},
+  {id:'chat-4',roleName:'Red Team'}
+]},{now:now+2400,makeId:()=> 't-plan-'+(++planIds)});
+assert.equal(board.tasks.length,3,'existing linked task is preserved, new chats get new review work');
+assert.ok(board.tasks.some(t=>t.chatId==='chat-3'&&t.title==='Review Proof Auditor findings'));
+const planSnapshot=board.tasks.length;
+board=model.mutate(board,{type:'seedFleetTasks',mission:'Ignored repeat',threads:[
+  {id:'chat-1',roleName:'Existing Role'}, {id:'chat-3',roleName:'Proof Auditor'},
+  {id:'chat-4',roleName:'Red Team'}
+]},{now:now+2450,makeId:()=> 't-plan-'+(++planIds)});
+assert.equal(board.tasks.length,planSnapshot,'repeated seed is idempotent');
+assert.throws(()=>model.mutate(board,{type:'seedFleetTasks',threads:[{id:'../wrong',roleName:'Bad'}]}),/identity/);
 const exported=JSON.parse(JSON.stringify(board));
 board=model.mutate(board,{type:'removeTask',id:'t-test-1'},{now:now+2400});
-assert.equal(board.tasks.length,0);
+assert.equal(board.tasks.length,2,'removing one task preserves linked review tasks');
 const previousRev=board.revision;
 board=model.mutate(board,{type:'import',board:exported},{now:now+2500});
 assert.equal(board.revision,previousRev+1);
-assert.equal(board.tasks.length,1);
+assert.equal(board.tasks.length,3);
 assert.equal(board.threads['chat-2'].status,'blocked');
 assert.throws(()=>model.mutate(board,{type:'addTask',task:{title:'Bad',due:'2026-02-31'}},{makeId:()=> 't-test-2'}),/Invalid due date/);
 assert.throws(()=>model.mutate(board,{type:'setThread',chatId:'../../x',patch:{status:'done'}}),/identity/);
