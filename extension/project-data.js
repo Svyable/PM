@@ -129,6 +129,32 @@
         }
         break;
       }
+      case'seedFleetTasks':{
+        // Must come from the worker's verified fleet ledger, not scraped page
+        // content. Duplicate clicks never generate duplicate linked tasks.
+        const verified=mutation.threads;
+        if(!Array.isArray(verified)||verified.length===0||verified.length>1000)
+          throw Error('A saved fleet is required to generate a review plan.');
+        if(!board.mission&&mutation.mission)board.mission=bounded(mutation.mission,limits.mission);
+        if(!board.nextAction)board.nextAction='Review specialist workstreams and collect their handoffs.';
+        const existing=new Set(board.tasks.map(t=>t.chatId).filter(Boolean));
+        for(const row of verified){
+          const id=bounded(row?.id,128),name=bounded(row?.roleName||'Specialist',80);
+          if(!idPattern.test(id))throw Error('Invalid fleet conversation identity.');
+          if(existing.has(id))continue;
+          if(board.tasks.length>=limits.tasks)throw Error('Maximum 500 work items reached; no partial plan saved.');
+          const taskId=makeId();
+          if(!idPattern.test(taskId)||board.tasks.some(t=>t.id===taskId))
+            throw Error('Could not create a unique fleet task.');
+          board.tasks.push(task({
+            id:taskId,title:'Review '+name+' findings',
+            notes:'Inspect this specialist thread, capture the evidence, handoff and next action.',
+            status:'todo',priority:'normal',chatId:id,milestone:false
+          },null,now));
+          existing.add(id);
+        }
+        break;
+      }
       case'import':
         if(mutation.board?.version!==1)throw Error('Expected a PM Project Board export (version 1).');
         return{...normalize(mutation.board,now),revision:board.revision+1,updatedAt:now};
