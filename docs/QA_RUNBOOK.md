@@ -138,3 +138,15 @@ Link this signed-off runbook to the v1 GO/NO-GO tracking issue. Keep the issue o
 - [ ] Simulate fleet storage failure: record success of the user turn but halt with an explicit role-mapping error, not a hanging "sending" state.
 - [ ] Simulate a visible account usage-limit notice and confirm PM blocks further sends until the limit clears. Do not evade account limits.
 - [ ] Check the full side panel across tab switches, Pause/Stop/Resume behavior, and safe outcome labels (no green success for uncertainty).
+
+## Smoke test L: PM 0.13 Project OS management
+
+- [ ] Project Board loads and remains scoped to the current Project ID. Mission, objective and next action save and survive a side-panel restart.
+- [ ] Task card supports title, note, priority, due date, manual status, optional known chat and milestone classification; overdue/open/blocked counts are accurate.
+- [ ] Filter conversations by PM workstream status; annotate one, bulk-update selected, and verify metadata does not masquerade as ChatGPT read/unread or generation state.
+- [ ] Use Select filtered → Dispatch to selected for exactly one known chat. Verify the selected ID, Project path, unique user message and one Send gesture.
+- [ ] Confirm fabricated/cross-Project selected URLs and stale revision writes are rejected.
+- [ ] Seed a specialist fleet and click Build fleet review plan. Tasks link only to verified specialist chats; repeat action without duplicates.
+- [ ] Export board; import on the same Project only after confirmation; fail closed for mismatched Project IDs, malformed files and version conflicts.
+- [ ] Inspect local terminal run history without changing ChatGPT conversation content.
+- [ ] Run full Chromium MV3 integration smoke and install the matching, hash-verified ZIP.
