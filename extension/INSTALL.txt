@@ -47,3 +47,5 @@ PM 0.12 PRIME-TIME ACCEPTANCE:
 - If local fleet-role storage fails, PM pauses instead of repeating a verified prompt.
 - Try one harmless prompt in a disposable Project before dispatching a larger fleet.
 - Successful automated CI is not proof of a live signed-in Chrome submission.
+
+PM 0.13 PROJECT OS: Open a ChatGPT Project overview, then the full PM side panel. Set a mission, success condition and next action. Add tasks/milestones with due dates, priority, notes and links to known chats. Search/mark workstreams, select filtered conversations and Dispatch to selected. After seeding a fleet, use Build fleet review plan to create linked follow-up tasks safely (idempotent). Use Export board to back up local notes as JSON; import is restricted to the same Project and asks before replacement. No PM server or cross-chat transcript access.
