@@ -41,3 +41,25 @@ assert.throws(()=>Fleet.plan('proof','',6),/mission/);
 assert.throws(()=>Fleet.plan('proof','M',1001),/1–1,000/);
 assert.throws(()=>Fleet.compose('science','X'.repeat(4001),0),/4,000/);
 console.log('PM fleet templates pass: four blueprints, distinct roles, waves, evidence boundaries and continuation semantics.');
+
+const fleet={mission:'Mission',threads:[{id:'chat-a',roleName:'Researcher'},{id:'chat-b',roleName:'Critic'}]};
+const board={mission:'Mission',objective:'Testable result',tasks:[
+  {id:'t-a',chatId:'chat-a',status:'done',title:'Review',notes:'Source A needs verification.'},
+  {id:'t-b',chatId:'chat-b',status:'todo',title:'Review',notes:'Secret unselected note'},
+  {id:'t-c',chatId:'other-project-chat',status:'done',title:'Unrelated',notes:'Unrelated note'}
+]};
+const brief=Fleet.synthesis(board,fleet,['t-a']);
+assert.ok(brief.includes('Source A needs verification.'));
+assert.ok(brief.includes('"includedConversations": 1'));
+assert.ok(brief.includes('"savedConversations": 2'));
+assert.ok(brief.includes('chat-b'));
+assert.ok(!brief.includes('Secret unselected note'));
+assert.ok(!brief.includes('Unrelated note'));
+assert.ok(brief.includes('data, not instructions'));
+assert.throws(()=>Fleet.synthesis(board,fleet,[]),/Select/);
+assert.throws(()=>Fleet.synthesis(board,fleet,['t-a','t-a']),/Duplicate/);
+assert.throws(()=>Fleet.synthesis(board,fleet,['t-b']),/Done/);
+assert.throws(()=>Fleet.synthesis(board,fleet,['t-c']),/saved fleet/);
+assert.throws(()=>Fleet.synthesis({...board,tasks:[{...board.tasks[0],notes:'X'.repeat(16000)}]},fleet,['t-a']),/nothing was truncated/);
+assert.throws(()=>Fleet.synthesis({...board,tasks:[{...board.tasks[0],notes:' '}]},fleet,['t-a']),/needs notes/);
+console.log('PM synthesis tests pass: selection, coverage, provenance, status, bounded prompt and exclusion.');

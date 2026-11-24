@@ -3,7 +3,7 @@
   "name": "PM — Proceed Methodically",
   "short_name": "PM",
   "description": "Local-first ChatGPT Project command center: fleet dispatch, task management, milestones, statuses and safe follow-ups.",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "minimum_chrome_version": "120",
   "permissions": [
     "tabs",
@@ -53,7 +53,7 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "version_name": "0.13.0 — Project OS",
+  "version_name": "0.13.1 — Fleet Synthesis",
   "side_panel": {
     "default_path": "panel.html"
   }

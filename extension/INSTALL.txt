@@ -1,4 +1,4 @@
-PM 0.13.0 — Proceed Methodically (v1 feature candidate)
+PM 0.13.1 — Proceed Methodically (v1 feature candidate)
 
 Install:
 1. Extract the ZIP.
@@ -31,13 +31,13 @@ Full Command Center:
 
 The Project launcher opens the window-wide Chrome side panel; switch tabs freely while monitoring PM.
 
-For v0.13.0 the Project launcher opens the Chrome side panel across the whole browser window, so the panel stays available when you switch tabs.
+For v0.13.1 the Project launcher opens the Chrome side panel across the whole browser window, so the panel stays available when you switch tabs.
 
 Project fleets (0.11): Choose Seed a project fleet, select Business/Science/Math/Brainswarm, enter one mission, review the roles, and Launch. Then choose Continue a saved project fleet to dispatch personalized prompts to the same mapped chats. PM seeds an existing ChatGPT Project; it does not create the Project container itself. Start with 1–2 test roles in a disposable Project.
 
 Submit reliability: real editor input is required; no direct contenteditable text rewrite. PM resolves a live Send button and attempts submission only once. If no Send control is found, it tries Enter once, then verifies a new matching user message. Never blindly retry an uncertain submission.
 
-Version 0.13.0: Prefer the enabled Send in the active composer. If ChatGPT exposes no Send control, PM tries one native form submission (if supported), otherwise one Enter event. Never manually repeat an uncertain send without inspecting the conversation.
+Version 0.13.1: Prefer the enabled Send in the active composer. If ChatGPT exposes no Send control, PM tries one native form submission (if supported), otherwise one Enter event. Never manually repeat an uncertain send without inspecting the conversation.
 
 PM 0.12 PRIME-TIME ACCEPTANCE:
 - The side panel automatically checks a live Project composer (no manual Reconnect).
@@ -49,3 +49,5 @@ PM 0.12 PRIME-TIME ACCEPTANCE:
 - Successful automated CI is not proof of a live signed-in Chrome submission.
 
 PM 0.13 PROJECT OS: Open a ChatGPT Project overview, then the full PM side panel. Set a mission, success condition and next action. Add tasks/milestones with due dates, priority, notes and links to known chats. Search/mark workstreams, select filtered conversations and Dispatch to selected. After seeding a fleet, use Build fleet review plan to create linked follow-up tasks safely (idempotent). Use Export board to back up local notes as JSON; import is restricted to the same Project and asks before replacement. No PM server or cross-chat transcript access.
+
+FLEET SYNTHESIS: In Project OS, review linked work items manually, replace their notes with reviewed findings and mark Done. Expand Prepare fleet synthesis brief, select notes, build and inspect the preview, then copy manually. PM does not read or send responses through this feature.

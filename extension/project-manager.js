@@ -165,9 +165,46 @@
       list.append(card);
     }
   }
+  let synthesisKey='',synthesisSelection=new Set();
+  function clearSynthesis(){
+    synthesisKey='';synthesisSelection.clear();
+    $('pmSynthesisChoices').replaceChildren();
+    $('pmSynthesisOutput').value='';
+    $('pmBuildSynthesis').disabled=true;
+    text('pmSynthesisStatus','');
+  }
+  function renderSynthesis(){
+    const key=JSON.stringify([context?.projectId,board?.revision,fleet?.threads?.map(row=>[row.id,row.roleName])]);
+    if(key===synthesisKey)return;
+    clearSynthesis();synthesisKey=key;
+    const roles=new Map((fleet?.threads||[]).map(row=>[row.id,row.roleName]));
+    const rows=(board?.tasks||[]).filter(task=>task.status==='done'&&roles.has(task.chatId)&&task.notes?.trim());
+    const list=$('pmSynthesisChoices');
+    if(!rows.length){list.append(el('p','pmEmpty','No completed review work items with notes from a saved fleet.'));return;}
+    for(const task of rows){
+      const label=el('label','pmCheck'),check=el('input');
+      check.type='checkbox';
+      label.append(check,el('span','',roles.get(task.chatId)+' · '+task.title));
+      check.addEventListener('change',()=>{
+        if(check.checked)synthesisSelection.add(task.id);else synthesisSelection.delete(task.id);
+        $('pmBuildSynthesis').disabled=!synthesisSelection.size;
+        $('pmSynthesisOutput').value='';text('pmSynthesisStatus','Selection changed. Build again to preview.');
+      });
+      list.append(label);
+    }
+  }
+  $('pmBuildSynthesis').addEventListener('click',()=>{
+    $('pmSynthesisOutput').value='';
+    if(!context||!board||busy||loading){text('pmSynthesisStatus','Wait for the current board update.');return;}
+    try{
+      $('pmSynthesisOutput').value=globalThis.PMFleet.synthesis(board,fleet,[...synthesisSelection]);
+      text('pmSynthesisStatus','Brief prepared locally. Review every note before copying; nothing was sent.');
+    }catch(e){text('pmSynthesisStatus',String(e.message||e));}
+  });
   function render(){
     if(!board)return;
     summaryCards();
+    renderSynthesis();
     briefFromBoard();
     threadOptions();
     renderTasks();renderHistory();
@@ -226,7 +263,7 @@
     const data=event.detail;
     if(!data?.projectId||!data.tabId){
       context=null;board=null;summary=null;history=[];fleet=null;globalThis.PMBoardState=null;
-      setControls(false);notify('Open a ChatGPT Project overview to manage its work.');
+      clearSynthesis();setControls(false);notify('Open a ChatGPT Project overview to manage its work.');
       return;
     }
     const changed=context?.projectId!==data.projectId;
@@ -234,7 +271,7 @@
     if(changed){
       board=null;history=[];summary=null;fleet=null;briefDirty=false;lastSync=0;editingTaskId=null;
       globalThis.PMBoardState=null;
-      setControls(false);notify('Loading Project Board…');
+      clearSynthesis();setControls(false);notify('Loading Project Board…');
     }
     void load(changed);
     if(board)threadOptions();

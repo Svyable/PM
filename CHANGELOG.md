@@ -1,5 +1,11 @@
 # PM / Proceed Methodically — Changelog
 
+## 0.13.1 — Fleet synthesis brief (candidate)
+
+- Compile explicitly selected, completed operator review notes tied to saved fleet chats into a local synthesis prompt with work-item and conversation provenance, coverage, contradictions and next-action instructions.
+- Preview only: no automatic response extraction, no automatic dispatch, no new permissions; reject oversized prompts without truncating. Clear selection on Project or board changes.
+- Tests for selected-only scope, missing workstreams, status, invalid inputs and prompt bounds. Signed-in production acceptance remains outstanding.
+
 ## 0.13.0 — Project OS / Portfolio Command Center (2026-11-22)
 
 **Focus:** persistent project management across ChatGPT conversations, not just bulk dispatch.

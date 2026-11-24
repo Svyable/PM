@@ -52,12 +52,12 @@ jobs:
           test -f docs/V1_LAUNCH_CHECKLIST.md
           test -f docs/STORE_LISTING_DRAFT.md
           grep -q 'privacy.html' docs/index.html
-          grep -q 'PM-Chrome-Extension-v0.13.0.zip' docs/index.html
+          grep -q 'PM-Chrome-Extension-v0.13.1.zip' docs/index.html
       - name: Verify reproducible installer and every extension file
         run: |
           node scripts/package.mjs --verify
-          unzip -t docs/downloads/PM-Chrome-Extension-v0.13.0.zip
+          unzip -t docs/downloads/PM-Chrome-Extension-v0.13.1.zip
           mkdir -p "$RUNNER_TEMP/pm-check"
-          unzip -q docs/downloads/PM-Chrome-Extension-v0.13.0.zip -d "$RUNNER_TEMP/pm-check"
+          unzip -q docs/downloads/PM-Chrome-Extension-v0.13.1.zip -d "$RUNNER_TEMP/pm-check"
           diff -qr extension "$RUNNER_TEMP/pm-check/extension"
-          sha256sum docs/downloads/PM-Chrome-Extension-v0.13.0.zip
+          sha256sum docs/downloads/PM-Chrome-Extension-v0.13.1.zip
