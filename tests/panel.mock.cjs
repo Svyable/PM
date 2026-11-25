@@ -46,7 +46,7 @@ function environment(route){
   assert.ok(html.includes('id="fleetWorkstreams"'),'fleet dashboard must show mapped role conversations');
   for(const id of ['pmPortfolio','pmBriefForm','pmTaskForm','pmTaskList',
     'pmSeedFleetTasks','pmThreadFilter','pmSelectedCount','pmDispatchSelected',
-    'pmHistoryList','pmExportBoard','pmImportBoard']){
+    'pmHistoryList','pmExportBoard','pmImportBoard','pmSynthesisChoices','pmBuildSynthesis','pmSynthesisOutput']){
     assert.ok(html.includes('id="'+id+'"'),'Project OS missing control '+id);
   }
   assert.ok(html.includes('value="selected"'),'selected-thread mode must be visible');

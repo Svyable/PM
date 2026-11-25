@@ -64,6 +64,15 @@ Once PM has verified the fleet's new conversation IDs, **Build fleet review plan
 
 PM does not automatically aggregate sibling conversations, extract full transcripts, update task statuses based on answer content, or create a synchronized multi-user team. The board is a local control plane for people coordinating their own Project work.
 
+## Prepare a fleet synthesis brief (0.13.1 candidate)
+
+1. Build the fleet review plan and open the linked specialist conversations yourself.
+2. Replace each relevant work item's notes with reviewed findings, source links or explicit evidence gaps. Mark it Done only when reviewed.
+3. Expand **Prepare fleet synthesis brief** and select the completed work items to share. Selection starts empty and is cleared on board or Project changes.
+4. Click **Build synthesis brief**. Inspect the read-only preview, including coverage and omitted conversation IDs; copy it manually to the integration chat you choose. A brief is not a verified synthesis and is never sent by this feature. PM does not read assistant output or verify the operator's notes. If the prompt exceeds 16,000 characters, choose fewer items; PM will not silently truncate.
+
+Design references: [ChatGPT Projects](https://help.openai.com/en/articles/10169521-projects-in-chatgpt), [OpenAI agent orchestration](https://developers.openai.com/api/docs/guides/agents/orchestration), [OpenAI Terms](https://openai.com/policies/terms-of-use/).
+
 ## Data and limitations
 
 - Stored locally in the Chrome profile used to install PM; not synced across devices by PM.

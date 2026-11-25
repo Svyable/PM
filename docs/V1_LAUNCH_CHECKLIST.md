@@ -1,7 +1,7 @@
 # PM v1.0 launch gate
 
 **State: NOT APPROVED FOR PUBLIC v1.0 RELEASE**
-**Candidate: 0.12.0**
+**Candidate: 0.13.1**
 **Prepared: November 18, 2026**
 
 Green automated tests demonstrate code paths, not authenticated ChatGPT compatibility or third-party authorization.
@@ -141,3 +141,11 @@ Keep the 0.7 installer on GitHub. Stop the run, inspect uncertain sends before m
 - [ ] Verified fleet IDs can create linked review tasks, without duplicate tasks on repeat.
 - [ ] JSON export/import is same-Project and explicitly confirmed, with honest privacy disclosures.
 - [ ] Real Chromium integration passes Project OS and fleet; authenticated ChatGPT production send test remains a separate release gate.
+
+### PM 0.13.1 fleet synthesis acceptance
+
+- [ ] Open two saved specialist chats; replace linked review task notes with reviewed findings, mark Done and select just one work item. Preview includes its work-item and conversation IDs and marks the other chat omitted, without copying its notes.
+- [ ] Edit the board or switch Projects; the selection and previous preview clear. Reopening a Project requires explicit reselection.
+- [ ] Confirm preview generation does not send messages, change ChatGPT tabs, read assistant responses or modify the saved notes. Manually inspect and copy the brief to a chosen integration chat.
+- [ ] Select enough reviewed notes to exceed the composer bound; PM reports the limit without silent truncation.
+- [ ] Existing signed-in submission and distribution gates remain required; the brief does not establish autonomous orchestration or verified research findings.
